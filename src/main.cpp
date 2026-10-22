@@ -32,7 +32,7 @@ int main(int argc, char *argv[])
         const QStringList families = QFontDatabase::applicationFontFamilies(regularFont);
         if (!families.isEmpty()) {
             QFont font(families.constFirst());
-            font.setPointSize(9);
+            font.setPointSize(11);
             QApplication::setFont(font);
         }
     }
