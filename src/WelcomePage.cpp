@@ -1,6 +1,7 @@
 #include "WelcomePage.h"
 
 #include "RecentVaultsStore.h"
+#include "VaultDirectory.h"
 
 #include <QAbstractItemView>
 #include <QAction>
@@ -188,7 +189,9 @@ QWidget *WelcomePage::createVaultListPane()
     m_vaultList->setObjectName(QStringLiteral("vaultList"));
     m_vaultList->setFrameShape(QFrame::NoFrame);
     m_vaultList->setSelectionMode(QAbstractItemView::SingleSelection);
-    m_vaultList->setIconSize(QSize(16, 16));
+    m_vaultList->setIconSize(QSize(32, 32));
+    m_vaultList->setSpacing(2);
+    m_vaultList->setUniformItemSizes(true);
     m_vaultList->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_vaultList, &QListWidget::itemSelectionChanged, this,
             &WelcomePage::updateVaultDetail);
@@ -387,16 +390,21 @@ void WelcomePage::refreshRecentVaults()
         m_vaultList->clear();
 
         for (const QString &path : paths) {
+            if (!isVaultDirectory(path))
+                continue;
+
             auto *item = new QListWidgetItem(displayName(path), m_vaultList);
             item->setData(Qt::UserRole, path);
             item->setToolTip(QDir::toNativeSeparators(path));
             item->setIcon(vaultIcon());
+            item->setSizeHint(QSize(0, 56));
         }
 
-        m_vaultList->setVisible(!paths.isEmpty());
-        m_emptyListLabel->setVisible(paths.isEmpty());
+        const bool hasVaults = m_vaultList->count() > 0;
+        m_vaultList->setVisible(hasVaults);
+        m_emptyListLabel->setVisible(!hasVaults);
 
-        if (!paths.isEmpty()) {
+        if (hasVaults) {
             int row = 0;
             for (int i = 0; i < m_vaultList->count(); ++i) {
                 if (m_vaultList->item(i)->data(Qt::UserRole).toString() == previousPath) {

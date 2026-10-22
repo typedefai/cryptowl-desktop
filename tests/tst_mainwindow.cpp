@@ -1,7 +1,11 @@
 #include "MainWindow.h"
 #include "RecentVaultsStore.h"
+#include "VaultDirectory.h"
 #include "WelcomePage.h"
 
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QLabel>
 #include <QListWidget>
 #include <QMenuBar>
@@ -23,6 +27,7 @@ private slots:
     void hasFileMenu();
     void startsWithoutVault();
     void startsOnVaultHome();
+    void recognizesVaultDirectories();
     void welcomePageHasStartActions();
     void welcomePageListsRecentVaults();
     void selectingVaultShowsDetails();
@@ -31,6 +36,11 @@ private slots:
     void unlockButtonReportsNotImplemented();
 
 private:
+    QString vaultPath(const QString &name) const
+    {
+        return QFileInfo(m_settingsDir.filePath(name)).canonicalFilePath();
+    }
+
     QTemporaryDir m_settingsDir;
 };
 
@@ -45,6 +55,14 @@ void TestMainWindow::initTestCase()
 void TestMainWindow::init()
 {
     QSettings().clear();
+
+    for (const QString &name : {QStringLiteral("vault-a"), QStringLiteral("vault-b")}) {
+        const QString path = m_settingsDir.filePath(name);
+        QDir().mkpath(path);
+        QFile meta(QDir(path).filePath(QStringLiteral("vault.meta")));
+        if (!meta.open(QIODevice::WriteOnly))
+            qFatal("Failed to create test vault marker");
+    }
 }
 
 void TestMainWindow::hasAppTitle()
@@ -71,6 +89,12 @@ void TestMainWindow::startsOnVaultHome()
 {
     MainWindow window;
     QVERIFY(qobject_cast<WelcomePage *>(window.centralWidget()));
+}
+
+void TestMainWindow::recognizesVaultDirectories()
+{
+    QVERIFY(isVaultDirectory(vaultPath(QStringLiteral("vault-a"))));
+    QVERIFY(!isVaultDirectory(m_settingsDir.path()));
 }
 
 void TestMainWindow::welcomePageHasStartActions()
@@ -133,10 +157,12 @@ void TestMainWindow::selectingVaultShowsDetails()
 
 void TestMainWindow::doubleClickingVaultMovesItToFront()
 {
+    const QString pathA = vaultPath(QStringLiteral("vault-a"));
+    const QString pathB = vaultPath(QStringLiteral("vault-b"));
     RecentVaultsStore store;
-    store.add(m_settingsDir.filePath(QStringLiteral("vault-a")));
-    store.add(m_settingsDir.filePath(QStringLiteral("vault-b")));
-    QCOMPARE(store.paths().constFirst(), m_settingsDir.filePath(QStringLiteral("vault-b")));
+    store.add(pathA);
+    store.add(pathB);
+    QCOMPARE(store.paths().constFirst(), pathB);
 
     MainWindow window;
     window.show();
@@ -150,7 +176,7 @@ void TestMainWindow::doubleClickingVaultMovesItToFront()
     QTest::mouseClick(list->viewport(), Qt::LeftButton, Qt::NoModifier, itemCenter);
     QTest::mouseDClick(list->viewport(), Qt::LeftButton, Qt::NoModifier, itemCenter);
 
-    QTRY_COMPARE(store.paths().constFirst(), m_settingsDir.filePath(QStringLiteral("vault-a")));
+    QTRY_COMPARE(store.paths().constFirst(), pathA);
     QTRY_VERIFY(window.statusBar()->currentMessage().contains(QStringLiteral("vault-a")));
 }
 

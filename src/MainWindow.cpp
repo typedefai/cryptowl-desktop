@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 
+#include "VaultDirectory.h"
 #include "WelcomePage.h"
 
 #include <QAction>
@@ -69,15 +70,34 @@ void MainWindow::createVault()
 
 void MainWindow::openVault()
 {
-    const QString dir = QFileDialog::getExistingDirectory(this, tr("Open vault folder"));
-    if (dir.isEmpty())
-        return;
+    while (true) {
+        const QString dir =
+            QFileDialog::getExistingDirectory(this, tr("Open CryptOwl vault"));
+        if (dir.isEmpty())
+            return;
 
-    openVaultAt(dir);
+        if (isVaultDirectory(dir)) {
+            openVaultAt(dir);
+            return;
+        }
+
+        QMessageBox::warning(
+            this, tr("Not a CryptOwl vault"),
+            tr("The selected folder is not a CryptOwl vault.\n\n"
+               "Choose a vault folder that contains a vault.meta file."));
+    }
 }
 
 void MainWindow::openVaultAt(QString path)
 {
+    if (!isVaultDirectory(path)) {
+        QMessageBox::warning(
+            this, tr("Not a CryptOwl vault"),
+            tr("The selected folder is not a CryptOwl vault.\n\n"
+               "Choose a vault folder that contains a vault.meta file."));
+        return;
+    }
+
     m_recentVaults.add(path);
     statusBar()->showMessage(tr("Selected vault folder: %1").arg(path));
     m_welcome->refreshRecentVaults();

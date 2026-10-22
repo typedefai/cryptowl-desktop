@@ -3,6 +3,7 @@ qt_add_library(cryptowl_ui STATIC
     MainWindow.cpp
     RecentVaultsStore.h
     RecentVaultsStore.cpp
+    VaultDirectory.h
     WelcomePage.h
     WelcomePage.cpp
 )

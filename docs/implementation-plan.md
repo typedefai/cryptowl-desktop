@@ -96,9 +96,10 @@ logged.
 
 ### P4 — UI ☐
 
-- ✅ Vault home (Cryptomator-style): left vault list, right vault detail with
-  lock/unlock controls; create/open actions; `QSettings`-persisted recent
-  vaults (max 10, remove from list)
+- ✅ Vault home (Cryptomator-style): left vault list with large rows, right
+  vault detail with lock/unlock controls; create/open actions (open accepts
+  only folders containing `vault.meta`); `QSettings`-persisted recent vaults
+  (max 10, remove from list)
 - Create/Unlock/Lock screens; auto-lock timer
 - Browser: sidebar + filter/search + list + detail; C/S/T badges; empty states
 - Note editor (C): plain text + markdown preview (`QTextDocument::setMarkdown`)
