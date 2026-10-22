@@ -10,10 +10,10 @@ specified in [`docs/`](docs/) — it replaces the earlier Python prototypes.
 
 ## Status
 
-Early scaffold: minimal Qt Widgets application (window, menus, smoke tests)
-plus the complete vault-format specification in `docs/`. Crypto and SQLCipher
-integration are next — see the implementation plan in [docs/items.md](docs/items.md)
-and [docs/roadmap.md](docs/roadmap.md).
+Early scaffold: minimal Qt Widgets application (window, menus, Cryptomator-style
+vault home with recent vaults, smoke tests) and the byte-exact **crypto core**
+(P1) of the vault format. SQLCipher and the vault bootstrap are next — see
+[docs/implementation-plan.md](docs/implementation-plan.md).
 
 ## Requirements
 
@@ -68,6 +68,7 @@ Tests are Qt Test binaries driving the UI headlessly
 
 ```
 ├── src/                Qt Widgets application (cryptowl_ui library + executable)
+├── assets/             UI fonts (Selawik, OFL)
 ├── tests/              Qt Test suites, run via ctest
 ├── docs/               vault format & product design (authoritative spec)
 └── .github/workflows/  CI: build + test on Linux / macOS / Windows

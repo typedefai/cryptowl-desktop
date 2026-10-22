@@ -1,7 +1,14 @@
 #include "MainWindow.h"
+#include "RecentVaultsStore.h"
+#include "WelcomePage.h"
 
+#include <QLabel>
+#include <QListWidget>
 #include <QMenuBar>
+#include <QPushButton>
+#include <QSettings>
 #include <QStatusBar>
+#include <QTemporaryDir>
 #include <QtTest>
 
 class TestMainWindow : public QObject
@@ -9,10 +16,36 @@ class TestMainWindow : public QObject
     Q_OBJECT
 
 private slots:
+    void initTestCase();
+    void init();
+
     void hasAppTitle();
     void hasFileMenu();
     void startsWithoutVault();
+    void startsOnVaultHome();
+    void welcomePageHasStartActions();
+    void welcomePageListsRecentVaults();
+    void selectingVaultShowsDetails();
+    void doubleClickingVaultMovesItToFront();
+    void removingSelectedVaultUpdatesList();
+    void unlockButtonReportsNotImplemented();
+
+private:
+    QTemporaryDir m_settingsDir;
 };
+
+void TestMainWindow::initTestCase()
+{
+    QCoreApplication::setOrganizationName(QStringLiteral("typedefai"));
+    QCoreApplication::setApplicationName(QStringLiteral("CryptOwl Desktop Test"));
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, m_settingsDir.path());
+}
+
+void TestMainWindow::init()
+{
+    QSettings().clear();
+}
 
 void TestMainWindow::hasAppTitle()
 {
@@ -32,6 +65,125 @@ void TestMainWindow::startsWithoutVault()
 {
     MainWindow window;
     QCOMPARE(window.statusBar()->currentMessage(), QStringLiteral("Ready"));
+}
+
+void TestMainWindow::startsOnVaultHome()
+{
+    MainWindow window;
+    QVERIFY(qobject_cast<WelcomePage *>(window.centralWidget()));
+}
+
+void TestMainWindow::welcomePageHasStartActions()
+{
+    MainWindow window;
+    auto *create = window.findChild<QPushButton *>(QStringLiteral("welcomeCreateVault"));
+    QVERIFY(create);
+    QCOMPARE(create->text(), QStringLiteral("Create new vault…"));
+
+    auto *open = window.findChild<QPushButton *>(QStringLiteral("welcomeOpenVault"));
+    QVERIFY(open);
+    QCOMPARE(open->text(), QStringLiteral("Open vault…"));
+}
+
+void TestMainWindow::welcomePageListsRecentVaults()
+{
+    RecentVaultsStore store;
+    store.add(m_settingsDir.filePath(QStringLiteral("vault-a")));
+    store.add(m_settingsDir.filePath(QStringLiteral("vault-b")));
+
+    MainWindow window;
+    auto *list = window.findChild<QListWidget *>(QStringLiteral("vaultList"));
+    QVERIFY(list);
+    QCOMPARE(list->count(), 2);
+    QCOMPARE(list->item(0)->text(), QStringLiteral("vault-b"));
+    QCOMPARE(list->item(1)->text(), QStringLiteral("vault-a"));
+}
+
+void TestMainWindow::selectingVaultShowsDetails()
+{
+    RecentVaultsStore store;
+    store.add(m_settingsDir.filePath(QStringLiteral("vault-a")));
+    store.add(m_settingsDir.filePath(QStringLiteral("vault-b")));
+
+    MainWindow window;
+    auto *list = window.findChild<QListWidget *>(QStringLiteral("vaultList"));
+    QVERIFY(list);
+    list->setCurrentRow(0);
+
+    auto *name = window.findChild<QLabel *>(QStringLiteral("vaultName"));
+    QVERIFY(name);
+    QCOMPARE(name->text(), QStringLiteral("vault-b"));
+
+    auto *path = window.findChild<QLabel *>(QStringLiteral("vaultPath"));
+    QVERIFY(path);
+    QVERIFY(path->text().endsWith(QStringLiteral("vault-b")));
+
+    auto *status = window.findChild<QLabel *>(QStringLiteral("vaultStatus"));
+    QVERIFY(status);
+    QCOMPARE(status->text(), QStringLiteral("Locked"));
+
+    auto *unlock = window.findChild<QPushButton *>(QStringLiteral("vaultUnlock"));
+    QVERIFY(unlock);
+    QVERIFY(unlock->isEnabled());
+
+    auto *lock = window.findChild<QPushButton *>(QStringLiteral("vaultLock"));
+    QVERIFY(lock);
+    QVERIFY(!lock->isEnabled());
+}
+
+void TestMainWindow::doubleClickingVaultMovesItToFront()
+{
+    RecentVaultsStore store;
+    store.add(m_settingsDir.filePath(QStringLiteral("vault-a")));
+    store.add(m_settingsDir.filePath(QStringLiteral("vault-b")));
+    QCOMPARE(store.paths().constFirst(), m_settingsDir.filePath(QStringLiteral("vault-b")));
+
+    MainWindow window;
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+
+    auto *list = window.findChild<QListWidget *>(QStringLiteral("vaultList"));
+    QVERIFY(list);
+    QListWidgetItem *item = list->item(1);
+    QVERIFY(item);
+    const QPoint itemCenter = list->visualItemRect(item).center();
+    QTest::mouseClick(list->viewport(), Qt::LeftButton, Qt::NoModifier, itemCenter);
+    QTest::mouseDClick(list->viewport(), Qt::LeftButton, Qt::NoModifier, itemCenter);
+
+    QTRY_COMPARE(store.paths().constFirst(), m_settingsDir.filePath(QStringLiteral("vault-a")));
+    QTRY_VERIFY(window.statusBar()->currentMessage().contains(QStringLiteral("vault-a")));
+}
+
+void TestMainWindow::removingSelectedVaultUpdatesList()
+{
+    RecentVaultsStore store;
+    store.add(m_settingsDir.filePath(QStringLiteral("vault-a")));
+
+    MainWindow window;
+    auto *list = window.findChild<QListWidget *>(QStringLiteral("vaultList"));
+    QVERIFY(list);
+    QCOMPARE(list->count(), 1);
+
+    auto *remove = window.findChild<QPushButton *>(QStringLiteral("vaultRemove"));
+    QVERIFY(remove);
+    remove->click();
+
+    QTRY_COMPARE(list->count(), 0);
+    QVERIFY(store.paths().isEmpty());
+}
+
+void TestMainWindow::unlockButtonReportsNotImplemented()
+{
+    RecentVaultsStore store;
+    store.add(m_settingsDir.filePath(QStringLiteral("vault-a")));
+
+    MainWindow window;
+    auto *unlock = window.findChild<QPushButton *>(QStringLiteral("vaultUnlock"));
+    QVERIFY(unlock);
+    QVERIFY(unlock->isEnabled());
+    unlock->click();
+
+    QVERIFY(window.statusBar()->currentMessage().contains(QStringLiteral("not implemented")));
 }
 
 QTEST_MAIN(TestMainWindow)

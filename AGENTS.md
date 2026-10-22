@@ -19,7 +19,7 @@ self-contained.
 
 - [docs/items.md](docs/items.md) — **vault format v3**: unified `t_item` model,
   per-item version history, type registry (plain → password → photo → video),
-  Explorer-style single-window UI. Start here.
+  Cryptomator-style vault home + Explorer-style in-vault UI. Start here.
 - [docs/schema.sql](docs/schema.sql) — canonical schema. **Fixed at vault
   creation: no `PRAGMA user_version`, no migrations, no ALTER.** Vaults created
   with an older schema are refused, not upgraded.
@@ -65,13 +65,20 @@ deliberately).
 
 ## Conventions
 
-- Qt Widgets only; UI text via `tr()`. Keep the Fusion style (set in `main.cpp`)
-  for a consistent cross-platform look.
+- Qt Widgets only; UI text via `tr()`. Prefer `WindowsVista` where available,
+  then classic Windows, then Fusion (set in `main.cpp`). The UI font is the
+  bundled Selawik (OFL, `assets/fonts/`), a Segoe UI-compatible face.
 - `src/` holds the `cryptowl_ui` static library (testable) + a thin
   `cryptowl-desktop` executable; tests link the library.
 - Tests: Qt Test (`Qt6::Test`), registered with `add_test` in
   `tests/CMakeLists.txt`, run through ctest.
-- SQLCipher is not integrated yet. When adding it, prefer a vendored
-  amalgamation built per-platform over system libraries.
+- Crypto backend: vendored/embedded dependencies only — mbedTLS 3.6.7
+  (FetchContent, pinned by hash; AES-256-GCM, HMAC-SHA256, SHA-256, CSPRNG) and
+  phc-winner-argon2 (vendored under `third_party/argon2/`, upstream code, do
+  not modify). The first configure downloads mbedTLS (~5 MB). Generate/fetch
+  no system crypto libraries.
+- SQLCipher is not integrated yet (P2). Plan: real SQLCipher, provider per
+  platform (macOS `CommonCrypto`, Linux `OpenSSL`), raw key expression
+  `x'<hex>'` only.
 - Third-party icon assets should carry their license (fluent-ui icons per
   items.md when the Explorer UI lands).

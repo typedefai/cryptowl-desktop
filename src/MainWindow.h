@@ -1,8 +1,10 @@
 #pragma once
 
+#include "RecentVaultsStore.h"
+
 #include <QMainWindow>
 
-class QLabel;
+class WelcomePage;
 
 class MainWindow : public QMainWindow
 {
@@ -12,11 +14,16 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
 
 private slots:
+    void createVault();
     void openVault();
+    void openVaultAt(QString path);
+    void unlockVault(const QString &path);
+    void lockVault(const QString &path);
     void showAbout();
 
 private:
     void createMenus();
 
-    QLabel *m_placeholder = nullptr;
+    RecentVaultsStore m_recentVaults;
+    WelcomePage *m_welcome = nullptr;
 };

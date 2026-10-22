@@ -201,6 +201,11 @@ change unless they need new columns.
 
 ## UI (Windows 10+ Explorer style, generated from the registry)
 
+Before a vault is unlocked, the **vault home** uses a Cryptomator-style layout:
+vault list on the left, selected-vault details and lock/unlock controls on the
+right. It uses a small Vista-style folder icon drawn in code. The Explorer-style
+browser below is the in-vault UI.
+
 Single-window browser; no dock/tab workspace:
 
 - **Ribbon tabs** on top (like Word/Excel): **File** (New/Open vault, Recent,
