@@ -1,3 +1,4 @@
+#include "DeviceSecretStore.h"
 #include "UnlockVaultDialog.h"
 #include "VaultUnlocker.h"
 
@@ -10,12 +11,14 @@
 #include <QDialog>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QLabel>
 #include <QLineEdit>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTemporaryDir>
+#include <QUuid>
 #include <QtTest>
 
 using namespace cryptowl::crypto;
@@ -41,11 +44,11 @@ bool writeFile(const QString &path, const QByteArray &data)
     return file.open(QIODevice::WriteOnly) && file.write(data) == data.size();
 }
 
-QJsonObject makeMeta(int memoryKib = 19456)
+QJsonObject makeMeta(int memoryKib = 19456, const QString &vaultId = kVaultId)
 {
     const Bytes passwordKey = hmacSha256(kDeviceSecret, bytesOf(kPassword));
     const Bytes tmk = argon2id(passwordKey, kArgon2Salt);
-    const Bytes smk = hkdfSha256(tmk, kHkdfSalt, bytesOf(kVaultId.toStdString()), 64);
+    const Bytes smk = hkdfSha256(tmk, kHkdfSalt, bytesOf(vaultId.toStdString()), 64);
     const std::span<const std::uint8_t> wrappingKey(smk.data(), 32);
     const GcmCiphertext wrapped =
         aesGcmEncrypt(wrappingKey, kNonce, bytesOf("vault_key:smk"), kVaultKey);
@@ -74,7 +77,7 @@ QJsonObject makeMeta(int memoryKib = 19456)
 
     QJsonObject meta;
     meta[QStringLiteral("version")] = 3;
-    meta[QStringLiteral("vault_id")] = kVaultId;
+    meta[QStringLiteral("vault_id")] = vaultId;
     meta[QStringLiteral("created_at")] = 1780000000000.0;
     meta[QStringLiteral("updated_at")] = 1780000000000.0;
     meta[QStringLiteral("kdf")] = kdf;
@@ -94,20 +97,24 @@ QJsonObject makeMeta(int memoryKib = 19456)
     return meta;
 }
 
-QString createVault(const QString &root, int memoryKib = 19456)
+QString createVault(const QString &root, int memoryKib = 19456, bool hexSecret = false,
+                    const QString &vaultId = kVaultId)
 {
-    const QString path = QDir(root).filePath(kVaultId);
+    const QString path = QDir(root).filePath(vaultId);
     if (!QDir().mkpath(path))
         return {};
     if (!writeFile(QDir(path).filePath(QStringLiteral("vault.meta")),
-                   QJsonDocument(makeMeta(memoryKib)).toJson(QJsonDocument::Indented))) {
+                   QJsonDocument(makeMeta(memoryKib, vaultId))
+                       .toJson(QJsonDocument::Indented))) {
         return {};
     }
-    if (!writeFile(QDir(path).filePath(QStringLiteral("device_secret")),
-                   QByteArray(reinterpret_cast<const char *>(kDeviceSecret.data()),
-                              static_cast<int>(kDeviceSecret.size())))) {
+
+    const QByteArray secret = hexSecret
+        ? QByteArray::fromStdString(toHex(kDeviceSecret))
+        : QByteArray(reinterpret_cast<const char *>(kDeviceSecret.data()),
+                     static_cast<int>(kDeviceSecret.size()));
+    if (!writeFile(QDir(path).filePath(QStringLiteral("device_secret")), secret))
         return {};
-    }
     return path;
 }
 
@@ -122,7 +129,9 @@ private slots:
     void rejectsWrongPassword();
     void rejectsTamperedMetadata();
     void rejectsMissingDeviceSecret();
+    void acceptsHexEncodedDeviceSecret();
     void rejectsOversizedKdfParameters();
+    void migratesLegacySecretToKeychain();
     void unlockDialogAcceptsCorrectPassword();
     void unlockDialogRejectsWrongPassword();
 };
@@ -134,7 +143,7 @@ void TestVaultUnlocker::unlocksWithCorrectPassword()
     const QString vault = createVault(dir.path());
     QVERIFY(!vault.isEmpty());
 
-    const auto result = VaultUnlocker::unlock(vault, QString::fromLatin1(kPassword));
+    const auto result = VaultUnlocker::unlock(vault, QString::fromLatin1(kPassword), false);
     QVERIFY2(result.ok, qPrintable(result.error));
     QCOMPARE(QString::fromStdString(toHex(result.vaultKey.span())),
              QString::fromStdString(toHex(kVaultKey)));
@@ -147,7 +156,7 @@ void TestVaultUnlocker::rejectsWrongPassword()
     const QString vault = createVault(dir.path());
     QVERIFY(!vault.isEmpty());
 
-    const auto result = VaultUnlocker::unlock(vault, QStringLiteral("wrong password"));
+    const auto result = VaultUnlocker::unlock(vault, QStringLiteral("wrong password"), false);
     QVERIFY(!result.ok);
     QVERIFY(!result.error.isEmpty());
 }
@@ -167,7 +176,7 @@ void TestVaultUnlocker::rejectsTamperedMetadata()
     meta[QStringLiteral("created_at")] = 1.0;
     QVERIFY(writeFile(metaPath, QJsonDocument(meta).toJson(QJsonDocument::Compact)));
 
-    const auto result = VaultUnlocker::unlock(vault, QString::fromLatin1(kPassword));
+    const auto result = VaultUnlocker::unlock(vault, QString::fromLatin1(kPassword), false);
     QVERIFY(!result.ok);
     QVERIFY(result.error.contains(QStringLiteral("corrupted"), Qt::CaseInsensitive));
 }
@@ -180,9 +189,22 @@ void TestVaultUnlocker::rejectsMissingDeviceSecret()
     QVERIFY(!vault.isEmpty());
     QVERIFY(QFile::remove(QDir(vault).filePath(QStringLiteral("device_secret"))));
 
-    const auto result = VaultUnlocker::unlock(vault, QString::fromLatin1(kPassword));
+    const auto result = VaultUnlocker::unlock(vault, QString::fromLatin1(kPassword), false);
     QVERIFY(!result.ok);
-    QVERIFY(result.error.contains(QStringLiteral("device_secret")));
+    QVERIFY(result.error.contains(QStringLiteral("Device secret")));
+}
+
+void TestVaultUnlocker::acceptsHexEncodedDeviceSecret()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString vault = createVault(dir.path(), 19456, true);
+    QVERIFY(!vault.isEmpty());
+
+    const auto result = VaultUnlocker::unlock(vault, QString::fromLatin1(kPassword), false);
+    QVERIFY2(result.ok, qPrintable(result.error));
+    QCOMPARE(QString::fromStdString(toHex(result.vaultKey.span())),
+             QString::fromStdString(toHex(kVaultKey)));
 }
 
 void TestVaultUnlocker::rejectsOversizedKdfParameters()
@@ -192,9 +214,50 @@ void TestVaultUnlocker::rejectsOversizedKdfParameters()
     const QString vault = createVault(dir.path(), 1024 * 1024);
     QVERIFY(!vault.isEmpty());
 
-    const auto result = VaultUnlocker::unlock(vault, QString::fromLatin1(kPassword));
+    const auto result = VaultUnlocker::unlock(vault, QString::fromLatin1(kPassword), false);
     QVERIFY(!result.ok);
     QVERIFY(result.error.contains(QStringLiteral("Argon2")));
+}
+
+void TestVaultUnlocker::migratesLegacySecretToKeychain()
+{
+#ifndef Q_OS_MACOS
+    QSKIP("Keychain storage is macOS-only.");
+#else
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString vaultId =
+        QStringLiteral("cryptowl-test-%1")
+            .arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
+    const QString vault = createVault(dir.path(), 19456, false, vaultId);
+    QVERIFY(!vault.isEmpty());
+
+    struct KeychainCleanup
+    {
+        QString vaultId;
+        ~KeychainCleanup()
+        {
+            QString error;
+            DeviceSecretStore::remove(vaultId, kArgon2Salt, &error);
+        }
+    } cleanup{vaultId};
+
+    const auto first =
+        VaultUnlocker::unlock(vault, QString::fromLatin1(kPassword), true);
+    QVERIFY2(first.ok, qPrintable(first.error));
+    QVERIFY2(first.warning.isEmpty(), qPrintable(first.warning));
+    QVERIFY(!QFileInfo::exists(QDir(vault).filePath(QStringLiteral("device_secret"))));
+
+    const auto second =
+        VaultUnlocker::unlock(vault, QString::fromLatin1(kPassword), false);
+    QVERIFY2(second.ok, qPrintable(second.error));
+    QCOMPARE(QString::fromStdString(toHex(second.vaultKey.span())),
+             QString::fromStdString(toHex(kVaultKey)));
+
+    QString removeError;
+    QVERIFY2(DeviceSecretStore::remove(vaultId, kArgon2Salt, &removeError),
+             qPrintable(removeError));
+#endif
 }
 
 void TestVaultUnlocker::unlockDialogAcceptsCorrectPassword()
@@ -204,7 +267,7 @@ void TestVaultUnlocker::unlockDialogAcceptsCorrectPassword()
     const QString vault = createVault(dir.path());
     QVERIFY(!vault.isEmpty());
 
-    UnlockVaultDialog dialog(vault);
+    UnlockVaultDialog dialog(vault, nullptr, false);
     auto *passwordEdit = dialog.findChild<QLineEdit *>(QStringLiteral("vaultPassword"));
     QVERIFY(passwordEdit);
     passwordEdit->setText(QString::fromLatin1(kPassword));
@@ -224,7 +287,7 @@ void TestVaultUnlocker::unlockDialogRejectsWrongPassword()
     const QString vault = createVault(dir.path());
     QVERIFY(!vault.isEmpty());
 
-    UnlockVaultDialog dialog(vault);
+    UnlockVaultDialog dialog(vault, nullptr, false);
     auto *passwordEdit = dialog.findChild<QLineEdit *>(QStringLiteral("vaultPassword"));
     QVERIFY(passwordEdit);
     passwordEdit->setText(QStringLiteral("wrong password"));

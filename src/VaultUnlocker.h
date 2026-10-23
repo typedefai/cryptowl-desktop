@@ -11,8 +11,10 @@ public:
     {
         bool ok = false;
         QString error;
+        QString warning;
         cryptowl::crypto::ProtectedValue vaultKey;
     };
 
-    static Result unlock(const QString &vaultPath, const QString &password);
+    static Result unlock(const QString &vaultPath, const QString &password,
+                         bool migrateDeviceSecret = true);
 };

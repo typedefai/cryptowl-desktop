@@ -10,15 +10,18 @@
 #include <QFileInfo>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QPalette>
 #include <QPushButton>
 #include <QVBoxLayout>
 
 #include <utility>
 
-UnlockVaultDialog::UnlockVaultDialog(QString vaultPath, QWidget *parent)
+UnlockVaultDialog::UnlockVaultDialog(QString vaultPath, QWidget *parent,
+                                     bool migrateDeviceSecret)
     : QDialog(parent)
     , m_vaultPath(std::move(vaultPath))
+    , m_migrateDeviceSecret(migrateDeviceSecret)
 {
     const QString name = QFileInfo(m_vaultPath).fileName();
     setWindowTitle(tr("Unlock %1").arg(name));
@@ -102,7 +105,7 @@ void UnlockVaultDialog::tryUnlock()
     QApplication::setOverrideCursor(Qt::WaitCursor);
     QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
 
-    auto result = VaultUnlocker::unlock(m_vaultPath, password);
+    auto result = VaultUnlocker::unlock(m_vaultPath, password, m_migrateDeviceSecret);
     password.fill(QLatin1Char('\0'));
 
     QApplication::restoreOverrideCursor();
@@ -117,6 +120,11 @@ void UnlockVaultDialog::tryUnlock()
 
     m_vaultKey = std::move(result.vaultKey);
     m_passwordEdit->clear();
+
+    if (!result.warning.isEmpty()) {
+        QMessageBox::warning(this, tr("Device secret not secured"), result.warning);
+    }
+
     accept();
 }
 

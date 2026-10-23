@@ -14,7 +14,8 @@ class UnlockVaultDialog : public QDialog
     Q_OBJECT
 
 public:
-    explicit UnlockVaultDialog(QString vaultPath, QWidget *parent = nullptr);
+    explicit UnlockVaultDialog(QString vaultPath, QWidget *parent = nullptr,
+                               bool migrateDeviceSecret = true);
 
     cryptowl::crypto::ProtectedValue takeVaultKey();
 
@@ -28,6 +29,7 @@ private:
     void setBusy(bool busy);
 
     QString m_vaultPath;
+    bool m_migrateDeviceSecret = true;
     QLineEdit *m_passwordEdit = nullptr;
     QCheckBox *m_showPassword = nullptr;
     QLabel *m_errorLabel = nullptr;

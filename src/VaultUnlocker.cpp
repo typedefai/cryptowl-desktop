@@ -1,5 +1,7 @@
 #include "VaultUnlocker.h"
 
+#include "DeviceSecretStore.h"
+
 #include "crypto/AesGcm.h"
 #include "crypto/Argon2.h"
 #include "crypto/Bytes.h"
@@ -19,6 +21,7 @@
 #include <span>
 #include <stdexcept>
 #include <string_view>
+#include <utility>
 
 namespace {
 
@@ -73,7 +76,9 @@ bool constantTimeEquals(std::span<const std::uint8_t> left,
 
 } // namespace
 
-VaultUnlocker::Result VaultUnlocker::unlock(const QString &vaultPath, const QString &password)
+VaultUnlocker::Result VaultUnlocker::unlock(const QString &vaultPath,
+                                            const QString &password,
+                                            bool migrateDeviceSecret)
 {
     try {
         QFile metaFile(QDir(vaultPath).filePath(QStringLiteral("vault.meta")));
@@ -153,28 +158,21 @@ VaultUnlocker::Result VaultUnlocker::unlock(const QString &vaultPath, const QStr
         if (expectedMac.size() != 32)
             return failure(QStringLiteral("Invalid vault.meta MAC."));
 
-        QFile deviceSecretFile(QDir(vaultPath).filePath(QStringLiteral("device_secret")));
-        if (!deviceSecretFile.open(QIODevice::ReadOnly))
-            return failure(QStringLiteral("Cannot read device_secret."));
-        if (deviceSecretFile.size() != 32)
-            return failure(QStringLiteral("device_secret must be exactly 32 bytes."));
-        QByteArray deviceSecret = deviceSecretFile.readAll();
-        ByteArrayWiper deviceSecretWiper{deviceSecret};
-        if (deviceSecret.size() != 32)
-            return failure(QStringLiteral("device_secret must be exactly 32 bytes."));
+        DeviceSecretStore::LoadResult secretResult =
+            DeviceSecretStore::load(vaultPath, vaultId, argon2Salt);
+        if (!secretResult.ok)
+            return failure(secretResult.error);
+        ProtectedValue deviceSecret(std::move(secretResult.secret));
 
         QByteArray passwordUtf8 = password.toUtf8();
         ByteArrayWiper passwordWiper{passwordUtf8};
         const QByteArray vaultIdUtf8 = vaultId.toUtf8();
 
-        const auto deviceSecretSpan = std::span<const std::uint8_t>(
-            reinterpret_cast<const std::uint8_t *>(deviceSecret.constData()),
-            static_cast<std::size_t>(deviceSecret.size()));
         const auto passwordSpan = std::span<const std::uint8_t>(
             reinterpret_cast<const std::uint8_t *>(passwordUtf8.constData()),
             static_cast<std::size_t>(passwordUtf8.size()));
 
-        ProtectedValue passwordKey(hmacSha256(deviceSecretSpan, passwordSpan));
+        ProtectedValue passwordKey(hmacSha256(deviceSecret.span(), passwordSpan));
 
         Argon2Params params;
         params.memoryKib = static_cast<std::uint32_t>(memoryKib);
@@ -213,6 +211,27 @@ VaultUnlocker::Result VaultUnlocker::unlock(const QString &vaultPath, const QStr
         Result result;
         result.ok = true;
         result.vaultKey = ProtectedValue(std::move(vaultKeyBytes));
+
+        if (migrateDeviceSecret && secretResult.fromLegacy
+            && DeviceSecretStore::isAvailable()) {
+            QString storeError;
+            if (!DeviceSecretStore::store(vaultId, argon2Salt, deviceSecret.span(),
+                                          &storeError)) {
+                result.warning =
+                    QStringLiteral("Vault unlocked, but the device secret could not be "
+                                   "moved to Keychain: %1")
+                        .arg(storeError);
+            } else {
+                QString removeError;
+                if (!DeviceSecretStore::removeLegacyFile(vaultPath, &removeError)) {
+                    result.warning =
+                        QStringLiteral("Vault unlocked, but the plaintext device_secret "
+                                       "file could not be removed: %1")
+                            .arg(removeError);
+                }
+            }
+        }
+
         return result;
     } catch (const AuthenticationError &) {
         return failure(QStringLiteral("Incorrect password or corrupted vault."));
