@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QSet>
 #include <QWidget>
 
 class QLabel;
@@ -18,6 +19,7 @@ public:
 
     void refreshRecentVaults();
     void selectMostRecentVault();
+    void setVaultUnlocked(const QString &path, bool unlocked);
 
 signals:
     void createVaultRequested();
@@ -47,4 +49,5 @@ private:
     QPushButton *m_unlockButton = nullptr;
     QPushButton *m_lockButton = nullptr;
     QPushButton *m_removeButton = nullptr;
+    QSet<QString> m_unlockedVaults;
 };

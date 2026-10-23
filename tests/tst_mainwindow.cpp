@@ -33,7 +33,7 @@ private slots:
     void selectingVaultShowsDetails();
     void doubleClickingVaultMovesItToFront();
     void removingSelectedVaultUpdatesList();
-    void unlockButtonReportsNotImplemented();
+    void unlockedStateUpdatesControls();
 
 private:
     QString vaultPath(const QString &name) const
@@ -198,18 +198,36 @@ void TestMainWindow::removingSelectedVaultUpdatesList()
     QVERIFY(store.paths().isEmpty());
 }
 
-void TestMainWindow::unlockButtonReportsNotImplemented()
+void TestMainWindow::unlockedStateUpdatesControls()
 {
+    const QString path = vaultPath(QStringLiteral("vault-a"));
     RecentVaultsStore store;
-    store.add(m_settingsDir.filePath(QStringLiteral("vault-a")));
+    store.add(path);
 
     MainWindow window;
-    auto *unlock = window.findChild<QPushButton *>(QStringLiteral("vaultUnlock"));
-    QVERIFY(unlock);
-    QVERIFY(unlock->isEnabled());
-    unlock->click();
+    auto *page = qobject_cast<WelcomePage *>(window.centralWidget());
+    QVERIFY(page);
 
-    QVERIFY(window.statusBar()->currentMessage().contains(QStringLiteral("not implemented")));
+    auto *status = window.findChild<QLabel *>(QStringLiteral("vaultStatus"));
+    auto *unlock = window.findChild<QPushButton *>(QStringLiteral("vaultUnlock"));
+    auto *lock = window.findChild<QPushButton *>(QStringLiteral("vaultLock"));
+    auto *remove = window.findChild<QPushButton *>(QStringLiteral("vaultRemove"));
+    QVERIFY(status);
+    QVERIFY(unlock);
+    QVERIFY(lock);
+    QVERIFY(remove);
+
+    page->setVaultUnlocked(path, true);
+    QCOMPARE(status->text(), QStringLiteral("Unlocked"));
+    QVERIFY(!unlock->isEnabled());
+    QVERIFY(lock->isEnabled());
+    QVERIFY(!remove->isEnabled());
+
+    page->setVaultUnlocked(path, false);
+    QCOMPARE(status->text(), QStringLiteral("Locked"));
+    QVERIFY(unlock->isEnabled());
+    QVERIFY(!lock->isEnabled());
+    QVERIFY(remove->isEnabled());
 }
 
 QTEST_MAIN(TestMainWindow)

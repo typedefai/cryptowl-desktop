@@ -3,13 +3,17 @@ qt_add_library(cryptowl_ui STATIC
     MainWindow.cpp
     RecentVaultsStore.h
     RecentVaultsStore.cpp
+    UnlockVaultDialog.h
+    UnlockVaultDialog.cpp
     VaultDirectory.h
+    VaultUnlocker.h
+    VaultUnlocker.cpp
     WelcomePage.h
     WelcomePage.cpp
 )
 
 target_include_directories(cryptowl_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(cryptowl_ui PUBLIC Qt6::Widgets)
+target_link_libraries(cryptowl_ui PUBLIC Qt6::Widgets cryptowl_core)
 
 qt_add_executable(cryptowl-desktop
     main.cpp

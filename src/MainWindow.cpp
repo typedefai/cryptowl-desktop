@@ -1,15 +1,19 @@
 #include "MainWindow.h"
 
+#include "UnlockVaultDialog.h"
 #include "VaultDirectory.h"
 #include "WelcomePage.h"
 
 #include <QAction>
 #include <QApplication>
+#include <QDialog>
 #include <QFileDialog>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QStatusBar>
+
+#include <utility>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -106,12 +110,26 @@ void MainWindow::openVaultAt(QString path)
 
 void MainWindow::unlockVault(const QString &path)
 {
-    statusBar()->showMessage(tr("Vault unlock is not implemented yet: %1").arg(path));
+    UnlockVaultDialog dialog(path, this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    auto vaultKey = dialog.takeVaultKey();
+    if (vaultKey.empty()) {
+        statusBar()->showMessage(tr("Vault unlock failed: %1").arg(path));
+        return;
+    }
+
+    m_unlockedVaults[path] = std::move(vaultKey);
+    m_welcome->setVaultUnlocked(path, true);
+    statusBar()->showMessage(tr("Vault unlocked: %1").arg(path));
 }
 
 void MainWindow::lockVault(const QString &path)
 {
-    statusBar()->showMessage(tr("Vault lock is not implemented yet: %1").arg(path));
+    m_unlockedVaults.erase(path);
+    m_welcome->setVaultUnlocked(path, false);
+    statusBar()->showMessage(tr("Vault locked: %1").arg(path));
 }
 
 void MainWindow::showAbout()

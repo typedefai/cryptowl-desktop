@@ -206,10 +206,12 @@ QWidget *WelcomePage::createVaultListPane()
                 if (!item)
                     return;
 
+                const QString path = item->data(Qt::UserRole).toString();
                 QMenu menu(this);
                 QAction *removeAction = menu.addAction(tr("Remove from list"));
+                removeAction->setEnabled(!m_unlockedVaults.contains(path));
                 if (menu.exec(m_vaultList->viewport()->mapToGlobal(pos)) == removeAction) {
-                    m_recentVaults->remove(item->data(Qt::UserRole).toString());
+                    m_recentVaults->remove(path);
                     refreshRecentVaults();
                 }
             });
@@ -431,6 +433,17 @@ QString WelcomePage::currentVaultPath() const
     return item ? item->data(Qt::UserRole).toString() : QString();
 }
 
+void WelcomePage::setVaultUnlocked(const QString &path, bool unlocked)
+{
+    if (unlocked)
+        m_unlockedVaults.insert(path);
+    else
+        m_unlockedVaults.remove(path);
+
+    if (currentVaultPath() == path)
+        updateVaultDetail();
+}
+
 void WelcomePage::updateVaultDetail()
 {
     const QString path = currentVaultPath();
@@ -439,19 +452,25 @@ void WelcomePage::updateVaultDetail()
         return;
     }
 
+    const bool unlocked = m_unlockedVaults.contains(path);
     m_vaultName->setText(displayName(path));
     m_vaultPath->setText(QDir::toNativeSeparators(path));
     m_vaultPath->setToolTip(QDir::toNativeSeparators(path));
-    m_vaultStatus->setText(tr("Locked"));
-    m_unlockButton->setEnabled(true);
-    m_lockButton->setEnabled(false);
+    m_vaultStatus->setText(unlocked ? tr("Unlocked") : tr("Locked"));
+    m_unlockButton->setEnabled(!unlocked);
+    m_lockButton->setEnabled(unlocked);
+    m_removeButton->setEnabled(!unlocked);
+    m_unlockButton->setToolTip(unlocked ? tr("The vault is already unlocked")
+                                        : tr("Unlock this vault"));
+    m_lockButton->setToolTip(unlocked ? tr("Lock this vault")
+                                      : tr("The vault is already locked"));
     m_detailStack->setCurrentWidget(m_vaultDetailPane);
 }
 
 void WelcomePage::removeSelectedVault()
 {
     const QString path = currentVaultPath();
-    if (path.isEmpty())
+    if (path.isEmpty() || m_unlockedVaults.contains(path))
         return;
 
     m_recentVaults->remove(path);

@@ -66,10 +66,11 @@ logged.
 - ☐ constant-time compare helper
 - ✅ Exit: `ctest` green, all vectors byte-exact
 
-### P2 — Vault bootstrap ☐
+### P2 — Vault bootstrap ◐
 
-- `vault.meta` v3: read/write, canonical sorted-key JSON, Crockford B32 fields,
-  MAC (excludes itself), atomic `.tmp`+rename
+- ◐ `vault.meta` v3: read + MAC verification + `vault_key:smk` unwrap (write /
+  create + atomic `.tmp`+rename pending)
+- ☐ canonical sorted-key JSON + Crockford B32 fields for writes
 - `config.json` + `config.sig` (HMAC with SMK[32:64])
 - key chain: `P` → TMK (Argon2id) → SMK (HKDF, info=vaultId) → unwrap
   `vault_key:smk`; re-sign rules on password change
@@ -100,7 +101,10 @@ logged.
   vault detail with lock/unlock controls; create/open actions (open accepts
   only folders containing `vault.meta`); `QSettings`-persisted recent vaults
   (max 10, remove from list)
-- Create/Unlock/Lock screens; auto-lock timer
+- ✅ Password unlock dialog: derive P → TMK → SMK, verify the `vault.meta` MAC,
+  unwrap `vault_key:smk`, and hold the key in memory until lock
+- ☐ Open the SQLCipher database with the unwrapped VaultKey after unlock
+- Auto-lock timer
 - Browser: sidebar + filter/search + list + detail; C/S/T badges; empty states
 - Note editor (C): plain text + markdown preview (`QTextDocument::setMarkdown`)
 - Password editor (S): username/url/secret/notes JSON payload, generator,

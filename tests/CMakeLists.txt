@@ -23,3 +23,15 @@ add_test(NAME tst_recentvaults COMMAND tst_recentvaults)
 set_tests_properties(tst_recentvaults PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
+
+qt_add_executable(tst_vaultunlocker
+    tst_vaultunlocker.cpp
+)
+
+target_link_libraries(tst_vaultunlocker PRIVATE cryptowl_ui Qt6::Test)
+
+add_test(NAME tst_vaultunlocker COMMAND tst_vaultunlocker)
+
+set_tests_properties(tst_vaultunlocker PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)

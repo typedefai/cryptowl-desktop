@@ -1,8 +1,11 @@
 #pragma once
 
 #include "RecentVaultsStore.h"
+#include "crypto/ProtectedValue.h"
 
 #include <QMainWindow>
+
+#include <map>
 
 class WelcomePage;
 
@@ -26,4 +29,5 @@ private:
 
     RecentVaultsStore m_recentVaults;
     WelcomePage *m_welcome = nullptr;
+    std::map<QString, cryptowl::crypto::ProtectedValue> m_unlockedVaults;
 };
