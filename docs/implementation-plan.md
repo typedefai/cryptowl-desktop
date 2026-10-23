@@ -30,7 +30,7 @@ interop beyond the vault format itself.
 | D4 | SQLCipher | P2: real SQLCipher, provider per platform — macOS `CommonCrypto`, Linux `OpenSSL`, Windows TBD | devkit precedent (`SQLCIPHER_CRYPTO_CC`/`OPENSSL`); on-disk format is provider-independent |
 | D5 | UX | password-manager layout: sidebar (type filters + pinned) + search-as-you-type + item list + detail/editor | 1Password/Bitwarden pattern; `items.md`'s Explorer style stays the dev-tooling pattern |
 | D6 | Tiers on desktop | C = vault unlock; S = per-item DEK, KEK **dev-bound** to SMK (re-prompt to reveal); T = secondary password (Argon2id → TS-KEK → TopSecretKEK) | no biometrics on desktop; matches `items.md` dev binding and `design.md` semantics |
-| D7 | Device secret | macOS Keychain (device-only, non-synchronizable); legacy `<vault>/device_secret` (32 raw / 64 hex) migrated on first unlock | closest desktop analog to the Android Keystore; Windows/Linux backends pending |
+| D7 | Device secret | QtKeychain (macOS Keychain, Windows Credential Store, Linux Secret Service); legacy `<vault>/device_secret` (32 raw / 64 hex) migrated on first unlock | cross-platform secure-store analog to Android Keystore |
 | D8 | Byte-exactness | golden vectors pinned in tests; HMAC order `P = HMAC(key=DeviceSecret, msg=password)` | the cross-verification contract with Android/vaultlib |
 
 ## Architecture
@@ -74,7 +74,7 @@ logged.
 - `config.json` + `config.sig` (HMAC with SMK[32:64])
 - key chain: `P` → TMK (Argon2id) → SMK (HKDF, info=vaultId) → unwrap
   `vault_key:smk`; re-sign rules on password change
-- ◐ `device_secret`: macOS Keychain load/store + legacy file migration; Windows/Linux secure-store backends pending
+- ◐ `device_secret`: QtKeychain load/store + legacy file migration; availability depends on the platform secure-store backend
 - SQLCipher open/create with **raw key expression `x'<hex>'`**; execute
   `docs/schema.sql` (idempotent, fixed at creation)
 - create / open / lock (close DB + zeroize); tamper detection (meta mac,

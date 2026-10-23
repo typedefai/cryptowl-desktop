@@ -75,8 +75,11 @@ deliberately).
 - Crypto backend: vendored/embedded dependencies only — mbedTLS 3.6.7
   (FetchContent, pinned by hash; AES-256-GCM, HMAC-SHA256, SHA-256, CSPRNG) and
   phc-winner-argon2 (vendored under `third_party/argon2/`, upstream code, do
-  not modify). The first configure downloads mbedTLS (~5 MB). Generate/fetch
-  no system crypto libraries.
+  not modify). The first configure downloads mbedTLS (~5 MB) and QtKeychain
+  0.17.0 (~68 KB). Generate/fetch no system crypto libraries.
+- Device secrets use QtKeychain (macOS Keychain, Windows Credential Store,
+  Linux Secret Service); legacy vault `device_secret` files are migrated on
+  unlock and removed after a successful write.
 - SQLCipher is not integrated yet (P2). Plan: real SQLCipher, provider per
   platform (macOS `CommonCrypto`, Linux `OpenSSL`), raw key expression
   `x'<hex>'` only.

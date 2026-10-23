@@ -12,6 +12,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QJsonArray>
 #include <QLabel>
 #include <QLineEdit>
@@ -221,9 +222,11 @@ void TestVaultUnlocker::rejectsOversizedKdfParameters()
 
 void TestVaultUnlocker::migratesLegacySecretToKeychain()
 {
-#ifndef Q_OS_MACOS
-    QSKIP("Keychain storage is macOS-only.");
-#else
+    if (!DeviceSecretStore::isAvailable())
+        QSKIP("No secure keychain backend is available.");
+    if (QGuiApplication::platformName() == QLatin1String("offscreen"))
+        QSKIP("QtKeychain requires the native event loop; skipped offscreen.");
+
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
     const QString vaultId =
@@ -257,7 +260,6 @@ void TestVaultUnlocker::migratesLegacySecretToKeychain()
     QString removeError;
     QVERIFY2(DeviceSecretStore::remove(vaultId, kArgon2Salt, &removeError),
              qPrintable(removeError));
-#endif
 }
 
 void TestVaultUnlocker::unlockDialogAcceptsCorrectPassword()

@@ -1,30 +1,27 @@
 #include "DeviceSecretStore.h"
 
 #include "crypto/Bytes.h"
-#include "crypto/Crockford32.h"
 
 #include <QByteArray>
 #include <QDir>
+#include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
+#include <QGuiApplication>
+#include <QString>
+
+#include <qtkeychain/keychain.h>
 
 #include <algorithm>
 #include <cctype>
 #include <string_view>
 #include <utility>
 
-#ifdef Q_OS_MACOS
-#include <CoreFoundation/CoreFoundation.h>
-#include <Security/Security.h>
-#endif
-
 namespace {
 
 using namespace cryptowl::crypto;
 
-#ifdef Q_OS_MACOS
-constexpr char kKeychainService[] = "com.typedefai.cryptowl.desktop";
-#endif
+const QString kKeychainService = QStringLiteral("com.typedefai.cryptowl.desktop");
 
 struct LegacyResult
 {
@@ -101,208 +98,42 @@ LegacyResult readLegacySecret(const QString &vaultPath)
     return result;
 }
 
-#ifdef Q_OS_MACOS
-
 QString accountName(const QString &vaultId, std::span<const std::uint8_t> argon2Salt)
 {
-    return vaultId + QLatin1Char(':')
-        + QString::fromStdString(toHex(argon2Salt));
+    return vaultId + QLatin1Char(':') + QString::fromStdString(toHex(argon2Salt));
 }
 
-QString keychainError(OSStatus status)
+bool runJob(QKeychain::Job &job, QString *error)
 {
-    CFStringRef message = SecCopyErrorMessageString(status, nullptr);
-    const QString text = message ? QString::fromCFString(message) : QString::number(status);
-    if (message)
-        CFRelease(message);
-    return text;
-}
+    job.setAutoDelete(false);
 
-CFStringRef makeCFString(const QString &text)
-{
-    const QByteArray utf8 = text.toUtf8();
-    return CFStringCreateWithBytes(kCFAllocatorDefault,
-                                   reinterpret_cast<const UInt8 *>(utf8.constData()),
-                                   utf8.size(), kCFStringEncodingUTF8, false);
-}
+    QEventLoop loop;
+    QObject::connect(&job, &QKeychain::Job::finished, &loop, &QEventLoop::quit);
+    job.start();
+    loop.exec();
 
-bool loadFromKeychain(const QString &account, ProtectedValue &secret, QString *error)
-{
-    const QString service = QString::fromLatin1(kKeychainService);
-    CFStringRef serviceRef = makeCFString(service);
-    CFStringRef accountRef = makeCFString(account);
-    if (!serviceRef || !accountRef) {
-        if (serviceRef)
-            CFRelease(serviceRef);
-        if (accountRef)
-            CFRelease(accountRef);
-        if (error)
-            *error = QStringLiteral("Could not create Keychain query.");
-        return false;
-    }
-
-    const void *keys[] = {kSecClass, kSecAttrService, kSecAttrAccount,
-                          kSecReturnData, kSecMatchLimit};
-    const void *values[] = {kSecClassGenericPassword, serviceRef, accountRef,
-                            kCFBooleanTrue, kSecMatchLimitOne};
-    CFDictionaryRef query = CFDictionaryCreate(
-        kCFAllocatorDefault, keys, values, 5, &kCFTypeDictionaryKeyCallBacks,
-        &kCFTypeDictionaryValueCallBacks);
-
-    CFTypeRef result = nullptr;
-    const OSStatus status = query ? SecItemCopyMatching(query, &result)
-                                  : errSecParam;
-    if (query)
-        CFRelease(query);
-    CFRelease(serviceRef);
-    CFRelease(accountRef);
-
-    if (status == errSecItemNotFound) {
-        if (error)
-            *error = QStringLiteral("Device secret not found in Keychain.");
-        return false;
-    }
-    if (status != errSecSuccess) {
-        if (error)
-            *error = QStringLiteral("Keychain read failed: %1").arg(keychainError(status));
-        return false;
-    }
-    if (!result || CFGetTypeID(result) != CFDataGetTypeID()) {
-        if (result)
-            CFRelease(result);
-        if (error)
-            *error = QStringLiteral("Keychain returned invalid device secret data.");
-        return false;
-    }
-
-    CFDataRef data = static_cast<CFDataRef>(result);
-    const CFIndex length = CFDataGetLength(data);
-    if (length != 32) {
-        CFRelease(result);
-        if (error)
-            *error = QStringLiteral("Keychain device secret has an invalid length.");
-        return false;
-    }
-
-    const UInt8 *bytes = CFDataGetBytePtr(data);
-    Bytes secretBytes(bytes, bytes + length);
-    CFRelease(result);
-    secret = ProtectedValue(std::move(secretBytes));
-    return true;
-}
-
-bool storeToKeychain(const QString &account, std::span<const std::uint8_t> secret,
-                     QString *error)
-{
-    const QString service = QString::fromLatin1(kKeychainService);
-    CFStringRef serviceRef = makeCFString(service);
-    CFStringRef accountRef = makeCFString(account);
-    CFDataRef valueRef =
-        CFDataCreate(kCFAllocatorDefault, secret.data(),
-                     static_cast<CFIndex>(secret.size()));
-    if (!serviceRef || !accountRef || !valueRef) {
-        if (serviceRef)
-            CFRelease(serviceRef);
-        if (accountRef)
-            CFRelease(accountRef);
-        if (valueRef)
-            CFRelease(valueRef);
-        if (error)
-            *error = QStringLiteral("Could not create Keychain item.");
-        return false;
-    }
-
-    const void *addKeys[] = {kSecClass, kSecAttrService, kSecAttrAccount,
-                             kSecValueData, kSecAttrAccessible,
-                             kSecAttrSynchronizable};
-    const void *addValues[] = {kSecClassGenericPassword, serviceRef, accountRef,
-                               valueRef, kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-                               kCFBooleanFalse};
-    CFDictionaryRef addQuery = CFDictionaryCreate(
-        kCFAllocatorDefault, addKeys, addValues, 6, &kCFTypeDictionaryKeyCallBacks,
-        &kCFTypeDictionaryValueCallBacks);
-
-    OSStatus status = addQuery ? SecItemAdd(addQuery, nullptr) : errSecParam;
-    if (addQuery)
-        CFRelease(addQuery);
-
-    if (status == errSecDuplicateItem) {
-        const void *queryKeys[] = {kSecClass, kSecAttrService, kSecAttrAccount};
-        const void *queryValues[] = {kSecClassGenericPassword, serviceRef, accountRef};
-        CFDictionaryRef query = CFDictionaryCreate(
-            kCFAllocatorDefault, queryKeys, queryValues, 3,
-            &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-
-        const void *updateKeys[] = {kSecValueData};
-        const void *updateValues[] = {valueRef};
-        CFDictionaryRef update = CFDictionaryCreate(
-            kCFAllocatorDefault, updateKeys, updateValues, 1,
-            &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-
-        status = (query && update) ? SecItemUpdate(query, update) : errSecParam;
-        if (query)
-            CFRelease(query);
-        if (update)
-            CFRelease(update);
-    }
-
-    CFRelease(valueRef);
-    CFRelease(serviceRef);
-    CFRelease(accountRef);
-
-    if (status != errSecSuccess) {
-        if (error)
-            *error = QStringLiteral("Keychain write failed: %1").arg(keychainError(status));
-        return false;
-    }
-    return true;
-}
-
-bool removeFromKeychain(const QString &account, QString *error)
-{
-    CFStringRef serviceRef = makeCFString(QString::fromLatin1(kKeychainService));
-    CFStringRef accountRef = makeCFString(account);
-    if (!serviceRef || !accountRef) {
-        if (serviceRef)
-            CFRelease(serviceRef);
-        if (accountRef)
-            CFRelease(accountRef);
-        if (error)
-            *error = QStringLiteral("Could not create Keychain query.");
-        return false;
-    }
-
-    const void *keys[] = {kSecClass, kSecAttrService, kSecAttrAccount};
-    const void *values[] = {kSecClassGenericPassword, serviceRef, accountRef};
-    CFDictionaryRef query = CFDictionaryCreate(
-        kCFAllocatorDefault, keys, values, 3, &kCFTypeDictionaryKeyCallBacks,
-        &kCFTypeDictionaryValueCallBacks);
-
-    const OSStatus status = query ? SecItemDelete(query) : errSecParam;
-    if (query)
-        CFRelease(query);
-    CFRelease(serviceRef);
-    CFRelease(accountRef);
-
-    if (status == errSecSuccess || status == errSecItemNotFound)
+    if (job.error() == QKeychain::NoError)
         return true;
 
-    if (error)
-        *error = QStringLiteral("Keychain delete failed: %1").arg(keychainError(status));
+    if (error) {
+        const QString detail = job.errorString();
+        *error = detail.isEmpty() ? QStringLiteral("Secure storage operation failed.")
+                                  : detail;
+    }
     return false;
 }
-
-#endif // Q_OS_MACOS
 
 } // namespace
 
 bool DeviceSecretStore::isAvailable()
 {
-#ifdef Q_OS_MACOS
-    return true;
-#else
-    return false;
-#endif
+    // QtKeychain's macOS backend relies on the native event loop. The
+    // offscreen platform used by the headless tests does not service it.
+    if (QGuiApplication::instance()
+        && QGuiApplication::platformName() == QLatin1String("offscreen")) {
+        return false;
+    }
+    return QKeychain::isAvailable();
 }
 
 DeviceSecretStore::LoadResult DeviceSecretStore::load(
@@ -319,48 +150,63 @@ DeviceSecretStore::LoadResult DeviceSecretStore::load(
         return result;
     }
 
-#ifdef Q_OS_MACOS
-    ProtectedValue secret;
-    QString error;
-    if (!loadFromKeychain(accountName(vaultId, argon2Salt), secret, &error)) {
+    if (!isAvailable()) {
         LoadResult result;
-        result.error = error;
+        result.error = QStringLiteral(
+            "Device secret not found. Secure device storage is not available on this system.");
         return result;
     }
 
+    QKeychain::ReadPasswordJob job(kKeychainService);
+    job.setKey(accountName(vaultId, argon2Salt));
+    QString error;
+    if (!runJob(job, &error)) {
+        LoadResult result;
+        if (job.error() == QKeychain::EntryNotFound)
+            result.error = QStringLiteral("Device secret not found in secure storage.");
+        else
+            result.error = QStringLiteral("Secure storage read failed: %1").arg(error);
+        return result;
+    }
+
+    const QByteArray data = job.binaryData();
+    if (data.size() != 32) {
+        LoadResult result;
+        result.error = QStringLiteral("Secure storage device secret has an invalid length.");
+        return result;
+    }
+
+    Bytes secretBytes(reinterpret_cast<const std::uint8_t *>(data.constData()),
+                      reinterpret_cast<const std::uint8_t *>(data.constData())
+                          + data.size());
+
     LoadResult result;
     result.ok = true;
-    result.secret = std::move(secret);
+    result.secret = ProtectedValue(std::move(secretBytes));
     return result;
-#else
-    Q_UNUSED(vaultId)
-    Q_UNUSED(argon2Salt)
-    LoadResult result;
-    result.error = QStringLiteral("Device secret not found. Secure device storage is "
-                                  "not available on this platform.");
-    return result;
-#endif
 }
 
 bool DeviceSecretStore::store(const QString &vaultId,
                               std::span<const std::uint8_t> argon2Salt,
                               std::span<const std::uint8_t> secret, QString *error)
 {
-#ifdef Q_OS_MACOS
+    if (!isAvailable()) {
+        if (error)
+            *error = QStringLiteral(
+                "Secure device storage is not available on this system.");
+        return false;
+    }
     if (secret.size() != 32) {
         if (error)
             *error = QStringLiteral("Device secret must be 32 bytes.");
         return false;
     }
-    return storeToKeychain(accountName(vaultId, argon2Salt), secret, error);
-#else
-    Q_UNUSED(vaultId)
-    Q_UNUSED(argon2Salt)
-    Q_UNUSED(secret)
-    if (error)
-        *error = QStringLiteral("Secure device storage is not available on this platform.");
-    return false;
-#endif
+
+    QKeychain::WritePasswordJob job(kKeychainService);
+    job.setKey(accountName(vaultId, argon2Salt));
+    job.setBinaryData(QByteArray(reinterpret_cast<const char *>(secret.data()),
+                                 static_cast<int>(secret.size())));
+    return runJob(job, error);
 }
 
 bool DeviceSecretStore::removeLegacyFile(const QString &vaultPath, QString *error)
@@ -381,12 +227,23 @@ bool DeviceSecretStore::removeLegacyFile(const QString &vaultPath, QString *erro
 bool DeviceSecretStore::remove(const QString &vaultId,
                                std::span<const std::uint8_t> argon2Salt, QString *error)
 {
-#ifdef Q_OS_MACOS
-    return removeFromKeychain(accountName(vaultId, argon2Salt), error);
-#else
-    Q_UNUSED(vaultId)
-    Q_UNUSED(argon2Salt)
-    Q_UNUSED(error)
-    return true;
-#endif
+    if (!isAvailable()) {
+        if (error)
+            *error = QStringLiteral(
+                "Secure device storage is not available on this system.");
+        return false;
+    }
+
+    QKeychain::DeletePasswordJob job(kKeychainService);
+    job.setKey(accountName(vaultId, argon2Salt));
+    QString jobError;
+    if (runJob(job, &jobError)) {
+        return true;
+    }
+    if (job.error() == QKeychain::EntryNotFound)
+        return true;
+
+    if (error)
+        *error = QStringLiteral("Secure storage delete failed: %1").arg(jobError);
+    return false;
 }

@@ -210,12 +210,12 @@ device → migrate moments → copy back). It follows this design byte-exact
 (fixed test vectors are the cross-verification contract with the Android
 implementation).
 
-- **Device Secret on desktop**: the Android Keystore analog. On macOS it lives
-  in Keychain as a device-only, non-synchronizable item. Legacy vaults with a
-  32-byte or 64-hex-character `<vault>/device_secret` file are migrated on the
-  first successful unlock and the plaintext file is removed. Once migrated, a
-  vault folder is not portable by itself; export/import/rebind is pending.
-  Windows/Linux secure-store backends are pending.
+- **Device Secret on desktop**: the Android Keystore analog, stored through
+  QtKeychain in the platform secure store (macOS Keychain, Windows Credential
+  Store, Linux Secret Service). Legacy vaults with a 32-byte or
+  64-hex-character `<vault>/device_secret` file are migrated on the first
+  successful unlock and the plaintext file is removed. Once migrated, a vault
+  folder is not portable by itself; export/import/rebind is pending.
 - **Android re-bind on import**: when a desktop-created vault is first opened
   on Android, the app derives the desktop SMK from the file + master
   password, re-wraps `vault_key:smk` with the Android SMK (Keystore Device

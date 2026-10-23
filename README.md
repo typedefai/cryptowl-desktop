@@ -11,9 +11,9 @@ specified in [`docs/`](docs/) — it replaces the earlier Python prototypes.
 ## Status
 
 Early scaffold: minimal Qt Widgets application (window, menus, Cryptomator-style
-vault home with recent vaults, password unlock against `vault.meta`, macOS
-Keychain device-secret migration, smoke tests) and the byte-exact **crypto
-core** (P1) of the vault format. SQLCipher and the vault bootstrap are next —
+vault home with recent vaults, password unlock against `vault.meta`,
+QtKeychain-backed device-secret migration, smoke tests) and the byte-exact
+**crypto core** (P1) of the vault format. SQLCipher and the vault bootstrap are next —
 see [docs/implementation-plan.md](docs/implementation-plan.md).
 
 ## Requirements

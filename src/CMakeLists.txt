@@ -15,16 +15,7 @@ qt_add_library(cryptowl_ui STATIC
 )
 
 target_include_directories(cryptowl_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(cryptowl_ui PUBLIC Qt6::Widgets cryptowl_core)
-
-if(APPLE)
-    find_library(SECURITY_FRAMEWORK Security REQUIRED)
-    find_library(COREFOUNDATION_FRAMEWORK CoreFoundation REQUIRED)
-    target_link_libraries(cryptowl_ui PRIVATE
-        ${SECURITY_FRAMEWORK}
-        ${COREFOUNDATION_FRAMEWORK}
-    )
-endif()
+target_link_libraries(cryptowl_ui PUBLIC Qt6::Widgets cryptowl_core PRIVATE qt6keychain)
 
 qt_add_executable(cryptowl-desktop
     main.cpp
