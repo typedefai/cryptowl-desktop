@@ -1,3 +1,4 @@
+#include "CreateVaultDialog.h"
 #include "DeviceSecretStore.h"
 #include "UnlockVaultDialog.h"
 #include "VaultUnlocker.h"
@@ -135,6 +136,7 @@ private slots:
     void migratesLegacySecretToKeychain();
     void unlockDialogAcceptsCorrectPassword();
     void unlockDialogRejectsWrongPassword();
+    void createDialogRequiresMatchingPasswords();
 };
 
 void TestVaultUnlocker::unlocksWithCorrectPassword()
@@ -301,6 +303,28 @@ void TestVaultUnlocker::unlockDialogRejectsWrongPassword()
     auto *error = dialog.findChild<QLabel *>(QStringLiteral("vaultError"));
     QVERIFY(error);
     QVERIFY(!error->text().isEmpty());
+}
+
+void TestVaultUnlocker::createDialogRequiresMatchingPasswords()
+{
+    CreateVaultDialog dialog(QStringLiteral("personal"));
+    auto *password = dialog.findChild<QLineEdit *>(QStringLiteral("vaultPassword"));
+    auto *confirm = dialog.findChild<QLineEdit *>(QStringLiteral("vaultPasswordConfirm"));
+    auto *error = dialog.findChild<QLabel *>(QStringLiteral("vaultError"));
+    QVERIFY(password);
+    QVERIFY(confirm);
+    QVERIFY(error);
+
+    password->setText(QStringLiteral("one"));
+    confirm->setText(QStringLiteral("two"));
+    QVERIFY(QMetaObject::invokeMethod(&dialog, "tryCreate", Qt::DirectConnection));
+    QVERIFY(dialog.result() != int(QDialog::Accepted));
+    QVERIFY(!error->text().isEmpty());
+
+    confirm->setText(QStringLiteral("one"));
+    QVERIFY(QMetaObject::invokeMethod(&dialog, "tryCreate", Qt::DirectConnection));
+    QCOMPARE(dialog.result(), int(QDialog::Accepted));
+    QCOMPARE(dialog.password(), QStringLiteral("one"));
 }
 
 QTEST_MAIN(TestVaultUnlocker)

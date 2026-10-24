@@ -68,17 +68,17 @@ logged.
 
 ### P2 — Vault bootstrap ◐
 
-- ◐ `vault.meta` v3: read + MAC verification + `vault_key:smk` unwrap (write /
-  create + atomic `.tmp`+rename pending)
-- ☐ canonical sorted-key JSON + Crockford B32 fields for writes
-- `config.json` + `config.sig` (HMAC with SMK[32:64])
-- key chain: `P` → TMK (Argon2id) → SMK (HKDF, info=vaultId) → unwrap
-  `vault_key:smk`; re-sign rules on password change
+- ✅ `vault.meta` v3 read/write, canonical sorted-key JSON, Crockford B32
+  fields, MAC verification, and atomic `QSaveFile` writes
+- ◐ `config.json` + `config.sig` creation (HMAC with SMK[32:64]);
+  verification on open pending
+- ◐ key chain: `P` → TMK (Argon2id) → SMK (HKDF, info=vaultId) →
+  wrap/unwrap `vault_key:smk`; re-sign rules on password change pending
 - ◐ `device_secret`: QtKeychain load/store + legacy file migration; availability depends on the platform secure-store backend
-- SQLCipher open/create with **raw key expression `x'<hex>'`**; execute
+- ☐ SQLCipher open/create with **raw key expression `x'<hex>'`**; execute
   `docs/schema.sql` (idempotent, fixed at creation)
-- create / open / lock (close DB + zeroize); tamper detection (meta mac,
-  config.sig); wrong-password → clean failure
+- ◐ create / open / lock; meta tamper detection and wrong-password failure done;
+  `config.sig` verification and DB close pending
 - portable-vault test (copy dir, reopen), tamper tests
 - Exit: create→lock→unlock round-trip + oracle `oracle_canonical_meta.json` MAC
   reproduces
@@ -103,7 +103,10 @@ logged.
   (max 10, remove from list)
 - ✅ Password unlock dialog: derive P → TMK → SMK, verify the `vault.meta` MAC,
   unwrap `vault_key:smk`, and hold the key in memory until lock
-- ☐ Open the SQLCipher database with the unwrapped VaultKey after unlock
+- ✅ Create vault: empty-folder picker + master-password confirmation; writes
+  `vault.meta` / `config.json` / `config.sig` and stores the device secret in
+  QtKeychain
+- ☐ Create/open the SQLCipher `vault.db` with the created/unwrapped VaultKey
 - Auto-lock timer
 - Browser: sidebar + filter/search + list + detail; C/S/T badges; empty states
 - Note editor (C): plain text + markdown preview (`QTextDocument::setMarkdown`)

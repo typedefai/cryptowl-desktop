@@ -12,8 +12,9 @@ specified in [`docs/`](docs/) — it replaces the earlier Python prototypes.
 
 Early scaffold: minimal Qt Widgets application (window, menus, Cryptomator-style
 vault home with recent vaults, password unlock against `vault.meta`,
-QtKeychain-backed device-secret migration, smoke tests) and the byte-exact
-**crypto core** (P1) of the vault format. SQLCipher and the vault bootstrap are next —
+QtKeychain-backed device-secret migration, vault creation (metadata/config;
+SQLCipher `vault.db` pending), smoke tests) and the byte-exact **crypto core**
+(P1) of the vault format. SQLCipher and the vault bootstrap are next —
 see [docs/implementation-plan.md](docs/implementation-plan.md).
 
 ## Requirements
@@ -21,6 +22,8 @@ see [docs/implementation-plan.md](docs/implementation-plan.md).
 - CMake ≥ 3.24 and a C++20 compiler (MSVC 2022, clang, gcc)
 - Qt 6.8+ with the Widgets module (CI builds against 6.9.3; local development is
   tested with Qt 6.12)
+- QtKeychain (fetched automatically) for device-secret storage; Linux needs a
+  Secret Service or KWallet backend
 - Ninja (recommended; ships with the Qt installer under `Tools/Ninja`)
 
 ## Build

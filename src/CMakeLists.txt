@@ -1,4 +1,6 @@
 qt_add_library(cryptowl_ui STATIC
+    CreateVaultDialog.h
+    CreateVaultDialog.cpp
     DeviceSecretStore.h
     DeviceSecretStore.cpp
     MainWindow.h
@@ -7,6 +9,8 @@ qt_add_library(cryptowl_ui STATIC
     RecentVaultsStore.cpp
     UnlockVaultDialog.h
     UnlockVaultDialog.cpp
+    VaultCreator.h
+    VaultCreator.cpp
     VaultDirectory.h
     VaultUnlocker.h
     VaultUnlocker.cpp

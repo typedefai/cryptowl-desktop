@@ -1,18 +1,23 @@
 #include "MainWindow.h"
 
+#include "CreateVaultDialog.h"
 #include "UnlockVaultDialog.h"
+#include "VaultCreator.h"
 #include "VaultDirectory.h"
 #include "WelcomePage.h"
 
 #include <QAction>
 #include <QApplication>
 #include <QDialog>
+#include <QDir>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QStatusBar>
 
+#include <exception>
 #include <utility>
 
 MainWindow::MainWindow(QWidget *parent)
@@ -69,7 +74,43 @@ void MainWindow::createVault()
     if (dir.isEmpty())
         return;
 
-    statusBar()->showMessage(tr("Vault creation is not implemented yet: %1").arg(dir));
+    if (!QDir(dir).entryList(QDir::AllEntries | QDir::NoDotAndDotDot).isEmpty()) {
+        QMessageBox::warning(this, tr("Folder is not empty"),
+                             tr("Choose an empty folder for the new vault."));
+        return;
+    }
+
+    const QString vaultName = QFileInfo(dir).fileName();
+    if (vaultName.isEmpty()) {
+        QMessageBox::warning(this, tr("Invalid vault folder"),
+                             tr("Choose a named folder for the new vault."));
+        return;
+    }
+
+    CreateVaultDialog dialog(vaultName, this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    QString password = dialog.password();
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    VaultCreator::Result created;
+    try {
+        created = VaultCreator::create(dir, password);
+    } catch (const std::exception &error) {
+        created.error = QString::fromUtf8(error.what());
+    }
+    QApplication::restoreOverrideCursor();
+    password.fill(QLatin1Char('\0'));
+
+    if (!created.ok) {
+        QMessageBox::critical(this, tr("Could not create vault"), created.error);
+        return;
+    }
+
+    m_recentVaults.add(dir);
+    m_welcome->refreshRecentVaults();
+    m_welcome->selectMostRecentVault();
+    statusBar()->showMessage(tr("Vault created: %1").arg(dir));
 }
 
 void MainWindow::openVault()
