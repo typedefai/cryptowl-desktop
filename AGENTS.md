@@ -72,12 +72,13 @@ deliberately).
   `cryptowl-desktop` executable; tests link the library.
 - Tests: Qt Test (`Qt6::Test`), registered with `add_test` in
   `tests/CMakeLists.txt`, run through ctest.
-- Crypto backend: vendored/embedded dependencies only — mbedTLS 3.6.7
-  (FetchContent, pinned by hash; AES-256-GCM, HMAC-SHA256, SHA-256, CSPRNG),
-  phc-winner-argon2 (vendored under `third_party/argon2/`, upstream code, do
-  not modify), and SQLCipher 4.19.0 (vendored amalgamation under
-  `third_party/sqlcipher/`). The first configure downloads mbedTLS (~5 MB),
-  LibTomCrypt 1.18.2 (~2.5 MB), and QtKeychain 0.17.0 (~68 KB).
+- Dependencies are vendored or fetched via hash-pinned `FetchContent`; see
+  [`third_party/MANIFEST.md`](third_party/MANIFEST.md). Crypto dependencies:
+  mbedTLS 3.6.7 (AES-256-GCM, HMAC-SHA256, SHA-256, CSPRNG), phc-winner-argon2
+  (vendored under `third_party/argon2/`, upstream code, do not modify), and
+  SQLCipher 4.19.0 (vendored amalgamation under `third_party/sqlcipher/`).
+  The first configure downloads mbedTLS (~5 MB), LibTomCrypt 1.18.2 (~2.5 MB),
+  and QtKeychain 0.17.0 (~68 KB).
 - SQLCipher uses the LibTomCrypt provider, so no system OpenSSL/CommonCrypto
   dependency. Always pass the VaultKey as the raw-key expression `x'<hex>'`,
   never as a bare blob.
