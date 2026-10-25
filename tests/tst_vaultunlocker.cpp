@@ -150,6 +150,7 @@ void TestVaultUnlocker::unlocksWithCorrectPassword()
     QVERIFY2(result.ok, qPrintable(result.error));
     QCOMPARE(QString::fromStdString(toHex(result.vaultKey.span())),
              QString::fromStdString(toHex(kVaultKey)));
+    QCOMPARE(result.smk.size(), std::size_t(64));
 }
 
 void TestVaultUnlocker::rejectsWrongPassword()
@@ -282,6 +283,8 @@ void TestVaultUnlocker::unlockDialogAcceptsCorrectPassword()
     const auto key = dialog.takeVaultKey();
     QCOMPARE(QString::fromStdString(toHex(key.span())),
              QString::fromStdString(toHex(kVaultKey)));
+    const auto smk = dialog.takeSmk();
+    QCOMPARE(smk.size(), std::size_t(64));
 }
 
 void TestVaultUnlocker::unlockDialogRejectsWrongPassword()

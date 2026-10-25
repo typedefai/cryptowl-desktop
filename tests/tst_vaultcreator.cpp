@@ -2,7 +2,9 @@
 #include "VaultUnlocker.h"
 
 #include "crypto/Bytes.h"
+#include "vault/ItemRepository.h"
 #include "vault/VaultDatabase.h"
+#include "vault/VaultSession.h"
 
 #include <QDir>
 #include <QFile>
@@ -80,15 +82,35 @@ void TestVaultCreator::createsUnlockableVault()
                       QByteArray(reinterpret_cast<const char *>(capturedSecret.data()),
                                  static_cast<int>(capturedSecret.size()))));
 
-    const auto unlocked =
+    auto unlocked =
         VaultUnlocker::unlock(vault, QString::fromLatin1(kPassword), false);
     QVERIFY2(unlocked.ok, qPrintable(unlocked.error));
 
+    const std::string databasePath =
+        QDir(vault).filePath(QStringLiteral("vault.db")).toStdString();
     std::string databaseError;
-    QVERIFY2(cryptowl::vault::VaultDatabase::verify(
-                 QDir(vault).filePath(QStringLiteral("vault.db")).toStdString(),
-                 unlocked.vaultKey.span(), &databaseError),
+    QVERIFY2(cryptowl::vault::VaultDatabase::verify(databasePath,
+                                                    unlocked.vaultKey.span(),
+                                                    &databaseError),
              databaseError.c_str());
+
+    std::string sessionError;
+    auto session = cryptowl::vault::VaultSession::open(
+        databasePath, std::move(unlocked.vaultKey), std::move(unlocked.smk),
+        &sessionError);
+    QVERIFY2(session != nullptr, sessionError.c_str());
+
+    cryptowl::vault::NewItem item;
+    item.type = "password";
+    item.classification = "S";
+    item.title = "GitHub";
+    item.meta = "{\"username\":\"riguz\",\"url\":\"https://github.com\"}";
+    item.payload = "{\"username\":\"riguz\",\"url\":\"https://github.com\","
+                   "\"secret\":\"secret\",\"notes\":\"notes\"}";
+    std::string itemId;
+    QVERIFY2(session->items().create(item, &itemId, &sessionError),
+             sessionError.c_str());
+    QVERIFY(!itemId.empty());
 }
 
 void TestVaultCreator::createsVaultInNewDirectory()

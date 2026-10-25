@@ -13,8 +13,12 @@ add_library(cryptowl_core STATIC
     crypto/Hash.cpp
     crypto/ProtectedValue.cpp
     crypto/Random.cpp
+    vault/ItemRepository.h
+    vault/ItemRepository.cpp
     vault/Schema.h
     vault/VaultDatabase.cpp
+    vault/VaultSession.h
+    vault/VaultSession.cpp
     "${CMAKE_CURRENT_BINARY_DIR}/Schema.cpp"
 )
 

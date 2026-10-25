@@ -13,6 +13,7 @@ public:
         QString error;
         QString warning;
         cryptowl::crypto::ProtectedValue vaultKey;
+        cryptowl::crypto::ProtectedValue smk;
     };
 
     static Result unlock(const QString &vaultPath, const QString &password,

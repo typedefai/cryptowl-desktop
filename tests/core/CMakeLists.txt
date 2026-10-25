@@ -21,3 +21,11 @@ qt_add_executable(tst_vaultdatabase
 target_link_libraries(tst_vaultdatabase PRIVATE cryptowl_core Qt6::Test)
 
 add_test(NAME tst_vaultdatabase COMMAND tst_vaultdatabase)
+
+qt_add_executable(tst_itemrepository
+    tst_itemrepository.cpp
+)
+
+target_link_libraries(tst_itemrepository PRIVATE cryptowl_core Qt6::Test)
+
+add_test(NAME tst_itemrepository COMMAND tst_itemrepository)

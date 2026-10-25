@@ -225,6 +225,7 @@ VaultUnlocker::Result VaultUnlocker::unlock(const QString &vaultPath,
         Result result;
         result.ok = true;
         result.vaultKey = ProtectedValue(std::move(vaultKeyBytes));
+        result.smk = std::move(smk);
 
         if (migrateDeviceSecret && secretResult.fromLegacy
             && DeviceSecretStore::isAvailable()) {

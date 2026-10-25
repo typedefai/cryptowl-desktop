@@ -79,3 +79,15 @@ add_test(NAME tst_vaultinfodialog COMMAND tst_vaultinfodialog)
 set_tests_properties(tst_vaultinfodialog PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
+
+qt_add_executable(tst_passwordeditordialog
+    tst_passwordeditordialog.cpp
+)
+
+target_link_libraries(tst_passwordeditordialog PRIVATE cryptowl_ui Qt6::Test)
+
+add_test(NAME tst_passwordeditordialog COMMAND tst_passwordeditordialog)
+
+set_tests_properties(tst_passwordeditordialog PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)

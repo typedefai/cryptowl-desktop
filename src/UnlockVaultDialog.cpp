@@ -82,10 +82,16 @@ cryptowl::crypto::ProtectedValue UnlockVaultDialog::takeVaultKey()
     return std::move(m_vaultKey);
 }
 
+cryptowl::crypto::ProtectedValue UnlockVaultDialog::takeSmk()
+{
+    return std::move(m_smk);
+}
+
 void UnlockVaultDialog::reject()
 {
     m_passwordEdit->clear();
     m_vaultKey.clear();
+    m_smk.clear();
     QDialog::reject();
 }
 
@@ -119,6 +125,7 @@ void UnlockVaultDialog::tryUnlock()
     }
 
     m_vaultKey = std::move(result.vaultKey);
+    m_smk = std::move(result.smk);
     m_passwordEdit->clear();
 
     if (!result.warning.isEmpty()) {

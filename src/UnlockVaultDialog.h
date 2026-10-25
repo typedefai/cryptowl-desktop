@@ -18,6 +18,7 @@ public:
                                bool migrateDeviceSecret = true);
 
     cryptowl::crypto::ProtectedValue takeVaultKey();
+    cryptowl::crypto::ProtectedValue takeSmk();
 
     void reject() override;
 
@@ -35,4 +36,5 @@ private:
     QLabel *m_errorLabel = nullptr;
     QPushButton *m_unlockButton = nullptr;
     cryptowl::crypto::ProtectedValue m_vaultKey;
+    cryptowl::crypto::ProtectedValue m_smk;
 };

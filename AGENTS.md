@@ -19,8 +19,8 @@ self-contained.
 
 - [docs/items.md](docs/items.md) — **vault format v3**: unified `t_item` model,
   per-item version history, type registry (plain → password → photo → video),
-  Cryptomator-style vault home + KeePass-style mock workspace now, with the
-  registry-driven Explorer UI as the target. Start here.
+  Cryptomator-style vault home + KeePass-style workspace now (real password
+  CRUD), with the registry-driven Explorer UI as the target. Start here.
 - [docs/schema.sql](docs/schema.sql) — canonical schema. **Fixed at vault
   creation: no `PRAGMA user_version`, no migrations, no ALTER.** Vaults created
   with an older schema are refused, not upgraded.

@@ -107,7 +107,7 @@ void TestMainWindow::vaultInfoActionEnabledWithVaultTab()
     auto *tabs = window.findChild<QTabWidget *>(QStringLiteral("vaultTabs"));
     QVERIFY(tabs);
 
-    auto *view = new VaultView(QStringLiteral("/tmp/mock-vault"), tabs);
+    auto *view = new VaultView(QStringLiteral("/tmp/mock-vault"), nullptr, tabs);
     tabs->addTab(view, QStringLiteral("mock"));
     tabs->setCurrentWidget(view);
 

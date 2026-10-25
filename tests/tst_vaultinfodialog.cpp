@@ -109,6 +109,8 @@ void TestVaultInfoDialog::showsVaultInformation()
     QVERIFY(plain.contains(QStringLiteral("19456")));
     QVERIFY(plain.contains(QStringLiteral("HMAC-SHA256")));
     QVERIFY(plain.contains(QStringLiteral("vault_key:smk")));
+    QVERIFY(plain.contains(QStringLiteral("KEK")));
+    QVERIFY(plain.contains(QStringLiteral("Item DEKs")));
     QVERIFY(plain.contains(QStringLiteral("SMK[32:64]")));
     QVERIFY(plain.contains(QStringLiteral("in memory for this session")));
     QVERIFY(plain.contains(QStringLiteral("legacy device_secret file")));

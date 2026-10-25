@@ -29,7 +29,7 @@ interop beyond the vault format itself.
 | D3 | HKDF | own RFC 5869 implementation over HMAC-SHA256 | mirrors the reference line-by-line (incl. empty-salt → 32 zero bytes); trivial and vector-locked |
 | D4 | SQLCipher | SQLCipher 5.0.0-beta.1 vendored amalgamation with the OpenSSL 3.5.8 LTS provider (developer-installed) | v5 AES-256-GCM/page-size defaults, no v4 compatibility; package a compatible OpenSSL runtime; raw key expression `x'<hex>'` only |
 | D5 | UX | password-manager layout: sidebar (type filters + pinned) + search-as-you-type + item list + detail/editor | 1Password/Bitwarden pattern; `items.md`'s Explorer style stays the dev-tooling pattern |
-| D6 | Tiers on desktop | C = vault unlock; S = per-item DEK, KEK **dev-bound** to SMK (re-prompt to reveal); T = secondary password (Argon2id → TS-KEK → TopSecretKEK) | no biometrics on desktop; matches `items.md` dev binding and `design.md` semantics |
+| D6 | Tiers on desktop | C = vault unlock; S = per-item DEK, KEK **dev-bound** to SMK and kept for the unlocked session (per-reveal re-prompt pending); T = secondary password (Argon2id → TS-KEK → TopSecretKEK) | no biometrics on desktop; matches `items.md` dev binding and `design.md` semantics |
 | D7 | Device secret | QtKeychain (macOS Keychain, Windows Credential Store, Linux Secret Service); legacy `<vault>/device_secret` (32 raw / 64 hex) migrated on first unlock | cross-platform secure-store analog to Android Keystore |
 | D8 | Byte-exactness | golden vectors pinned in tests; HMAC order `P = HMAC(key=DeviceSecret, msg=password)` | the cross-verification contract with Android/vaultlib |
 
@@ -83,19 +83,20 @@ logged.
 - Exit: create→lock→unlock round-trip + oracle `oracle_canonical_meta.json` MAC
   reproduces
 
-### P3 — Item model ☐
+### P3 — Item model ◐
 
-- `ItemRepository`: list/get/create/update/soft-delete/pin/parent tree over
-  `t_item`; type registry (`plain`, `password`)
-- S-tier plumbing: `t_data_encrypt_key` + `t_encrypted_data`, DEK per item,
+- ✅ `ItemRepository`: list/get/create/update/soft-delete over `t_item` for the
+  S-tier password type; pin/tree/type-registry expansion pending
+- ✅ S-tier plumbing: `t_data_encrypt_key` + `t_encrypted_data`, DEK per item,
   KEK dev binding (`t_wrapped_key` role=kek wrapper=smk), AAD = record id
-- T tier: secondary password setup, TS-KEK, TopSecretKEK wrap/unwrap
-- History: `fingerprint = HMAC(HFK, title \0 classification \0 payload)`,
-  append `t_item_version`, retention (default 100), restore-as-new-seq
+- ◐ T tier: secondary password setup, TS-KEK, TopSecretKEK wrap/unwrap
+- ◐ History: fingerprint (`HMAC(HFK, title \0 classification \0 payload)`),
+  create/update version rows, and unchanged-save suppression; retention
+  (default 100), restore, and diff UI pending
 - Text diff (Myers over lines) for `plain` payloads
 - Exit: repository + history + tier tests green headless
 
-### P4 — UI ☐
+### P4 — UI ◐
 
 - ✅ Vault home (Cryptomator-style): left vault list with large rows, right
   vault detail with lock/unlock controls; create/open actions (open accepts
@@ -108,19 +109,20 @@ logged.
   parent and rejects non-empty/invalid paths
 - ✅ Create vault: master-password confirmation; writes `vault.meta` /
   `config.json` / `config.sig` and stores the device secret in QtKeychain
-- ◐ Create/verify the SQLCipher `vault.db`; opening it for item access after
-  unlock is pending
+- ✅ Create/verify/open the SQLCipher `vault.db`; item access for S-tier
+  passwords after unlock
 - Auto-lock timer
-- ◐ KeePass-style vault workspace mock: menu + toolbar, vault tabs, group
-  tree, details/icon views, bottom info pane, context-menu operations, and
-  hardcoded mock data
+- ◐ KeePass-style vault workspace: menu + toolbar, vault tabs, group tree,
+  details/icon views, bottom info pane, context-menu operations; real
+  password CRUD replaces the mock entries
 - ✅ File → Vault info dialog: location, SQLCipher/AES-256-GCM settings,
   Argon2id parameters, key states, wrapped-key metadata, salts, and files;
   key material and wrapped ciphertext are never displayed
 - Browser: sidebar + filter/search + list + detail; C/S/T badges; empty states
 - Note editor (C): plain text + markdown preview (`QTextDocument::setMarkdown`)
-- Password editor (S): username/url/secret/notes JSON payload, generator,
-  reveal re-prompts master password, clipboard policy (password never copied)
+- ◐ Password editor (S): username/url/secret/notes JSON payload, show/hide,
+  create/edit/soft-delete; KEK is session-scoped, generator and per-reveal
+  master-password re-prompt pending; password is never copied
 - History panel: version list, messages, text diff, restore
 - Exit: manual walkthrough of goals 1–5
 

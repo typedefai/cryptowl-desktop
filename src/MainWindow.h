@@ -1,12 +1,12 @@
 #pragma once
 
 #include "RecentVaultsStore.h"
-#include "crypto/ProtectedValue.h"
 
 #include <QHash>
 #include <QMainWindow>
 
 #include <map>
+#include <memory>
 
 class QAction;
 class QLineEdit;
@@ -14,6 +14,10 @@ class QStackedWidget;
 class QTabWidget;
 class VaultView;
 class WelcomePage;
+
+namespace cryptowl::vault {
+class VaultSession;
+}
 
 class MainWindow : public QMainWindow
 {
@@ -48,7 +52,7 @@ private:
     QStackedWidget *m_centerStack = nullptr;
     QTabWidget *m_vaultTabs = nullptr;
     QHash<QString, VaultView *> m_vaultViews;
-    std::map<QString, cryptowl::crypto::ProtectedValue> m_unlockedVaults;
+    std::map<QString, std::shared_ptr<cryptowl::vault::VaultSession>> m_sessions;
 
     QAction *m_newVaultAction = nullptr;
     QAction *m_openVaultAction = nullptr;
@@ -57,7 +61,6 @@ private:
     QAction *m_addEntryAction = nullptr;
     QAction *m_editEntryAction = nullptr;
     QAction *m_deleteEntryAction = nullptr;
-    QAction *m_copyPasswordAction = nullptr;
     QAction *m_copyUsernameAction = nullptr;
     QAction *m_detailsAction = nullptr;
     QAction *m_iconsAction = nullptr;

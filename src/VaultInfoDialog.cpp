@@ -168,9 +168,14 @@ QString VaultInfoDialog::buildHtml() const
     addRow(tr("Device secret"),
            legacySecret ? tr("32 bytes; legacy device_secret file (migrates on next unlock)")
                         : tr("32 bytes; OS secure storage (QtKeychain)"));
+    addRow(tr("KEK"),
+           tr("32 bytes; SMK-wrapped dev binding; %1")
+               .arg(m_unlocked ? tr("in memory for this session")
+                               : tr("not in memory")));
     addRow(tr("TMK"), tr("32 bytes; Argon2id output; never stored"));
     addRow(tr("SMK"), tr("64 bytes; HKDF-SHA256 output; never stored"));
     addRow(tr("Metadata MAC key"), tr("SMK[32:64]; derived on demand"));
+    addRow(tr("Item DEKs"), tr("one per S-tier item; wrapped by KEK"));
     html += QStringLiteral("</table>");
 
     html += tr("<p><b>Wrapped VaultKey copies:</b></p><ul>");

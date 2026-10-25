@@ -5,11 +5,10 @@
 
 #include <sqlite3.h>
 
-#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <string>
-#include <string_view>
+#include <utility>
 
 extern "C" char *sqlcipher_version(void);
 
@@ -17,63 +16,11 @@ namespace cryptowl::vault {
 
 namespace {
 
-class Database
+void setError(std::string *error, const char *message)
 {
-public:
-    Database() = default;
-    ~Database()
-    {
-        close();
-    }
-
-    Database(const Database &) = delete;
-    Database &operator=(const Database &) = delete;
-
-    sqlite3 *handle() const
-    {
-        return m_handle;
-    }
-
-    void close()
-    {
-        if (m_handle) {
-            sqlite3_close(m_handle);
-            m_handle = nullptr;
-        }
-    }
-
-    bool open(const std::string &path, int flags, std::string *error)
-    {
-        const int rc = sqlite3_open_v2(path.c_str(), &m_handle, flags, nullptr);
-        if (rc != SQLITE_OK) {
-            setError(error, m_handle ? sqlite3_errmsg(m_handle)
-                                     : "could not open database");
-            return false;
-        }
-        return true;
-    }
-
-    bool exec(const std::string &sql, std::string *error)
-    {
-        char *message = nullptr;
-        const int rc = sqlite3_exec(m_handle, sql.c_str(), nullptr, nullptr, &message);
-        if (rc != SQLITE_OK) {
-            setError(error, message ? message : sqlite3_errmsg(m_handle));
-            sqlite3_free(message);
-            return false;
-        }
-        return true;
-    }
-
-    static void setError(std::string *error, const char *message)
-    {
-        if (error)
-            *error = message ? message : "database error";
-    }
-
-private:
-    sqlite3 *m_handle = nullptr;
-};
+    if (error)
+        *error = message ? message : "database error";
+}
 
 std::string rawKeyPragma(std::span<const std::uint8_t> vaultKey)
 {
@@ -86,15 +33,23 @@ std::filesystem::path pathFromUtf8(const std::string &path)
         reinterpret_cast<const char8_t *>(path.data()), path.size()));
 }
 
-bool prepareKey(Database &db, std::span<const std::uint8_t> vaultKey,
+bool prepareKey(sqlite3 *handle, std::span<const std::uint8_t> vaultKey,
                 std::string *error)
 {
     if (vaultKey.size() != 32) {
-        Database::setError(error, "vault key must be 32 bytes");
+        setError(error, "vault key must be 32 bytes");
         return false;
     }
 
-    return db.exec(rawKeyPragma(vaultKey), error);
+    const std::string pragma = rawKeyPragma(vaultKey);
+    char *message = nullptr;
+    const int rc = sqlite3_exec(handle, pragma.c_str(), nullptr, nullptr, &message);
+    if (rc != SQLITE_OK) {
+        setError(error, message ? message : sqlite3_errmsg(handle));
+        sqlite3_free(message);
+        return false;
+    }
+    return true;
 }
 
 bool hasSchema(sqlite3 *db, std::string *error)
@@ -116,18 +71,94 @@ bool hasSchema(sqlite3 *db, std::string *error)
         &count, &message);
 
     if (rc != SQLITE_OK) {
-        Database::setError(error, message ? message : sqlite3_errmsg(db));
+        setError(error, message ? message : sqlite3_errmsg(db));
         sqlite3_free(message);
         return false;
     }
     if (count != 6) {
-        Database::setError(error, "vault database schema is incomplete");
+        setError(error, "vault database schema is incomplete");
         return false;
     }
     return true;
 }
 
 } // namespace
+
+VaultDatabase::~VaultDatabase()
+{
+    close();
+}
+
+VaultDatabase::VaultDatabase(VaultDatabase &&other) noexcept
+    : m_handle(std::exchange(other.m_handle, nullptr))
+{
+}
+
+VaultDatabase &VaultDatabase::operator=(VaultDatabase &&other) noexcept
+{
+    if (this != &other) {
+        close();
+        m_handle = std::exchange(other.m_handle, nullptr);
+    }
+    return *this;
+}
+
+void VaultDatabase::close()
+{
+    if (m_handle) {
+        sqlite3_close(m_handle);
+        m_handle = nullptr;
+    }
+}
+
+bool VaultDatabase::openWithFlags(const std::string &path, int flags,
+                                  std::span<const std::uint8_t> vaultKey,
+                                  std::string *error)
+{
+    close();
+
+    const int rc = sqlite3_open_v2(path.c_str(), &m_handle, flags, nullptr);
+    if (rc != SQLITE_OK) {
+        setError(error, m_handle ? sqlite3_errmsg(m_handle)
+                                 : "could not open database");
+        close();
+        return false;
+    }
+    if (!prepareKey(m_handle, vaultKey, error)) {
+        close();
+        return false;
+    }
+    sqlite3_busy_timeout(m_handle, 5000);
+    return true;
+}
+
+bool VaultDatabase::execute(const std::string &sql, std::string *error)
+{
+    char *message = nullptr;
+    const int rc = sqlite3_exec(m_handle, sql.c_str(), nullptr, nullptr, &message);
+    if (rc != SQLITE_OK) {
+        setError(error, message ? message : sqlite3_errmsg(m_handle));
+        sqlite3_free(message);
+        return false;
+    }
+    return true;
+}
+
+bool VaultDatabase::open(const std::string &path,
+                         std::span<const std::uint8_t> vaultKey,
+                         std::string *error)
+{
+    if (!openWithFlags(path, SQLITE_OPEN_READWRITE, vaultKey, error))
+        return false;
+
+    if (!execute("PRAGMA foreign_keys = ON;", error)
+        || !execute("PRAGMA secure_delete = ON;", error)
+        || !hasSchema(m_handle, error)) {
+        close();
+        return false;
+    }
+    return true;
+}
 
 bool VaultDatabase::create(const std::string &path,
                            std::span<const std::uint8_t> vaultKey,
@@ -136,20 +167,19 @@ bool VaultDatabase::create(const std::string &path,
     std::error_code ec;
     const std::filesystem::path fsPath = pathFromUtf8(path);
     if (std::filesystem::exists(fsPath, ec)) {
-        Database::setError(error, "vault database already exists");
+        setError(error, "vault database already exists");
         return false;
     }
 
-    Database db;
-    if (!db.open(path, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, error))
-        return false;
-    if (!prepareKey(db, vaultKey, error)) {
-        db.close();
+    VaultDatabase db;
+    if (!db.openWithFlags(path, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE,
+                          vaultKey, error)) {
         std::filesystem::remove(fsPath, ec);
         return false;
     }
-    if (!db.exec("PRAGMA foreign_keys = ON;", error)
-        || !db.exec(std::string(schemaSql()), error)
+    if (!db.execute("PRAGMA foreign_keys = ON;", error)
+        || !db.execute("PRAGMA secure_delete = ON;", error)
+        || !db.execute(std::string(schemaSql()), error)
         || !hasSchema(db.handle(), error)) {
         db.close();
         std::filesystem::remove(fsPath, ec);
@@ -162,10 +192,8 @@ bool VaultDatabase::verify(const std::string &path,
                            std::span<const std::uint8_t> vaultKey,
                            std::string *error)
 {
-    Database db;
-    if (!db.open(path, SQLITE_OPEN_READONLY, error))
-        return false;
-    if (!prepareKey(db, vaultKey, error))
+    VaultDatabase db;
+    if (!db.openWithFlags(path, SQLITE_OPEN_READONLY, vaultKey, error))
         return false;
     return hasSchema(db.handle(), error);
 }

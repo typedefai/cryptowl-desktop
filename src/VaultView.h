@@ -1,11 +1,10 @@
 #pragma once
 
 #include <QList>
-#include <QPair>
 #include <QString>
 #include <QWidget>
 
-#include <optional>
+#include <memory>
 
 class QAbstractItemView;
 class QListWidget;
@@ -14,12 +13,19 @@ class QStackedWidget;
 class QTextBrowser;
 class QTreeWidget;
 
+namespace cryptowl::vault {
+class VaultSession;
+}
+
 class VaultView : public QWidget
 {
     Q_OBJECT
 
 public:
-    explicit VaultView(QString vaultPath, QWidget *parent = nullptr);
+    explicit VaultView(
+        QString vaultPath,
+        std::shared_ptr<cryptowl::vault::VaultSession> session,
+        QWidget *parent = nullptr);
 
     QString vaultPath() const;
 
@@ -29,42 +35,38 @@ public:
     void addEntry();
     void editSelectedEntry();
     void deleteSelectedEntry();
-    void copySelectedPassword();
     void copySelectedUsername();
 
 signals:
     void statusMessage(const QString &message);
 
 private:
-    struct Entry
+    struct PasswordRow
     {
+        QString id;
         QString title;
         QString username;
-        QString password;
         QString url;
-        QString notes;
-        QString modified;
-    };
-
-    struct Group
-    {
-        QString name;
-        QList<Entry> entries;
+        QString classification;
+        qint64 updatedAt = 0;
     };
 
     QWidget *createStructurePane();
     QWidget *createContentPane();
-    void populateMockData();
-    void refreshLists();
+    void reload(const QString &selectId = QString());
+    void refreshLists(const QString &selectId = QString());
     void updateInfo();
+    void updateGroupCounts();
     void showContextMenu(QAbstractItemView *view, const QPoint &pos);
-    void selectEntry(int groupIndex, int entryIndex);
-    std::optional<QPair<int, int>> selectedEntry() const;
+    QString selectedId() const;
+    void selectItem(const QString &id);
+    const PasswordRow *rowForId(const QString &id) const;
 
     QString m_vaultPath;
+    std::shared_ptr<cryptowl::vault::VaultSession> m_session;
+    QList<PasswordRow> m_rows;
     QString m_filter;
-    int m_currentGroup = -1;
-    QList<Group> m_groups;
+    QString m_loadError;
     QTreeWidget *m_structure = nullptr;
     QStackedWidget *m_contentStack = nullptr;
     QTreeWidget *m_details = nullptr;

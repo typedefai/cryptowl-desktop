@@ -6,6 +6,7 @@
 #include "VaultDirectory.h"
 #include "VaultInfoDialog.h"
 #include "VaultPathDialog.h"
+#include "vault/VaultSession.h"
 #include "VaultView.h"
 #include "WelcomePage.h"
 
@@ -100,30 +101,25 @@ void MainWindow::createActions()
     connect(m_vaultInfoAction, &QAction::triggered, this, &MainWindow::showVaultInfo);
 
     m_addEntryAction = new QAction(
-        style()->standardIcon(QStyle::SP_FileIcon), tr("&Add entry…"), this);
+        style()->standardIcon(QStyle::SP_FileIcon), tr("&New password…"), this);
     connect(m_addEntryAction, &QAction::triggered, this, [this] {
         if (auto *view = currentVaultView())
             view->addEntry();
     });
 
     m_editEntryAction = new QAction(
-        style()->standardIcon(QStyle::SP_FileDialogDetailedView), tr("&Edit entry…"), this);
+        style()->standardIcon(QStyle::SP_FileDialogDetailedView), tr("&Edit password…"),
+        this);
     connect(m_editEntryAction, &QAction::triggered, this, [this] {
         if (auto *view = currentVaultView())
             view->editSelectedEntry();
     });
 
     m_deleteEntryAction = new QAction(
-        style()->standardIcon(QStyle::SP_TrashIcon), tr("&Delete entry"), this);
+        style()->standardIcon(QStyle::SP_TrashIcon), tr("&Delete password"), this);
     connect(m_deleteEntryAction, &QAction::triggered, this, [this] {
         if (auto *view = currentVaultView())
             view->deleteSelectedEntry();
-    });
-
-    m_copyPasswordAction = new QAction(tr("Copy &password"), this);
-    connect(m_copyPasswordAction, &QAction::triggered, this, [this] {
-        if (auto *view = currentVaultView())
-            view->copySelectedPassword();
     });
 
     m_copyUsernameAction = new QAction(tr("Copy user &name"), this);
@@ -166,7 +162,6 @@ void MainWindow::createMenus()
     editMenu->addAction(m_editEntryAction);
     editMenu->addAction(m_deleteEntryAction);
     editMenu->addSeparator();
-    editMenu->addAction(m_copyPasswordAction);
     editMenu->addAction(m_copyUsernameAction);
 
     QMenu *viewMenu = menuBar()->addMenu(tr("&View"));
@@ -288,12 +283,26 @@ void MainWindow::unlockVault(const QString &rawPath)
         return;
 
     auto vaultKey = dialog.takeVaultKey();
-    if (vaultKey.empty()) {
+    auto smk = dialog.takeSmk();
+    if (vaultKey.empty() || smk.empty()) {
         statusBar()->showMessage(tr("Vault unlock failed: %1").arg(path));
         return;
     }
 
-    m_unlockedVaults[path] = std::move(vaultKey);
+    std::string sessionError;
+    auto session = cryptowl::vault::VaultSession::open(
+        QDir(path).filePath(QStringLiteral("vault.db")).toUtf8().toStdString(),
+        std::move(vaultKey), std::move(smk), &sessionError);
+    if (!session) {
+        QMessageBox::critical(
+            this, tr("Could not open vault database"),
+            sessionError.empty() ? tr("The vault database could not be opened.")
+                                 : QString::fromStdString(sessionError));
+        statusBar()->showMessage(tr("Vault unlock failed: %1").arg(path));
+        return;
+    }
+
+    m_sessions[path] = std::move(session);
     m_welcome->setVaultUnlocked(path, true);
     showVault(path);
     statusBar()->showMessage(tr("Vault unlocked: %1").arg(path));
@@ -302,15 +311,15 @@ void MainWindow::unlockVault(const QString &rawPath)
 void MainWindow::lockVault(const QString &rawPath)
 {
     const QString path = canonicalVaultPath(rawPath);
-    m_unlockedVaults.erase(path);
     m_welcome->setVaultUnlocked(path, false);
 
     if (auto *view = m_vaultViews.take(path)) {
         const int index = m_vaultTabs->indexOf(view);
         if (index >= 0)
             m_vaultTabs->removeTab(index);
-        view->deleteLater();
+        delete view;
     }
+    m_sessions.erase(path);
 
     if (m_vaultTabs->count() == 0)
         m_centerStack->setCurrentWidget(m_welcome);
@@ -332,7 +341,7 @@ void MainWindow::showVaultInfo()
         return;
 
     const QString path = canonicalVaultPath(view->vaultPath());
-    VaultInfoDialog dialog(path, m_unlockedVaults.contains(path), this);
+    VaultInfoDialog dialog(path, m_sessions.contains(path), this);
     dialog.exec();
 }
 
@@ -345,7 +354,11 @@ void MainWindow::showVault(const QString &rawPath)
         return;
     }
 
-    auto *view = new VaultView(path, m_vaultTabs);
+    const auto session = m_sessions.find(path);
+    if (session == m_sessions.end())
+        return;
+
+    auto *view = new VaultView(path, session->second, m_vaultTabs);
     connect(view, &VaultView::statusMessage, this,
             [this](const QString &message) { statusBar()->showMessage(message); });
 
@@ -370,8 +383,7 @@ void MainWindow::updateWorkspaceActions()
     const bool hasVault = currentVaultView() != nullptr;
     const QList<QAction *> actions = {
         m_lockVaultAction, m_vaultInfoAction, m_addEntryAction, m_editEntryAction,
-        m_deleteEntryAction, m_copyPasswordAction, m_copyUsernameAction, m_detailsAction,
-        m_iconsAction,
+        m_deleteEntryAction, m_copyUsernameAction, m_detailsAction, m_iconsAction,
     };
     for (QAction *action : actions)
         action->setEnabled(hasVault);
