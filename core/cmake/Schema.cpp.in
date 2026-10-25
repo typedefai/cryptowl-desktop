@@ -1,0 +1,10 @@
+#include "vault/Schema.h"
+
+namespace cryptowl::vault {
+
+std::string_view schemaSql()
+{
+    return R"CRYPTOWL_SCHEMA(@CRYPTOWL_SCHEMA_SQL@)CRYPTOWL_SCHEMA";
+}
+
+}

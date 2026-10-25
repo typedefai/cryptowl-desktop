@@ -8,6 +8,7 @@
 #include "crypto/Crockford32.h"
 #include "crypto/Hash.h"
 #include "crypto/Random.h"
+#include "vault/VaultDatabase.h"
 
 #include <QByteArray>
 #include <QDateTime>
@@ -20,6 +21,7 @@
 #include <QSaveFile>
 
 #include <span>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -240,6 +242,23 @@ VaultCreator::Result VaultCreator::create(const QString &vaultPath,
         return failAndCleanup(QStringLiteral("Could not write vault.meta: %1").arg(writeError));
     }
     created.push_back(paths[2]);
+
+    const QString databasePath = QDir(vaultPath).filePath(QStringLiteral("vault.db"));
+    created.push_back(databasePath);
+    std::string databaseError;
+    if (!cryptowl::vault::VaultDatabase::create(
+            databasePath.toUtf8().toStdString(), vaultKey.span(), &databaseError)) {
+        return failAndCleanup(QStringLiteral("Could not create vault.db: %1")
+                                  .arg(QString::fromStdString(databaseError)));
+    }
+
+#ifndef Q_OS_WIN
+    if (!QFile::setPermissions(databasePath,
+                               QFileDevice::ReadOwner | QFileDevice::WriteOwner)) {
+        return failAndCleanup(
+            QStringLiteral("Could not restrict vault.db permissions."));
+    }
+#endif
 
     SecretWriter writer = secretWriter;
     if (!writer) {

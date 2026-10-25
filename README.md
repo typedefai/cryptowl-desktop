@@ -12,10 +12,10 @@ specified in [`docs/`](docs/) — it replaces the earlier Python prototypes.
 
 Early scaffold: minimal Qt Widgets application (window, menus, Cryptomator-style
 vault home with recent vaults, password unlock against `vault.meta`,
-QtKeychain-backed device-secret migration, vault creation (metadata/config;
-SQLCipher `vault.db` pending), smoke tests) and the byte-exact **crypto core**
-(P1) of the vault format. SQLCipher and the vault bootstrap are next —
-see [docs/implementation-plan.md](docs/implementation-plan.md).
+QtKeychain-backed device-secret migration, vault creation with a SQLCipher
+`vault.db`, smoke tests) and the byte-exact **crypto core** (P1) of the vault
+format. `config.sig` verification and the item layer are next — see
+[docs/implementation-plan.md](docs/implementation-plan.md).
 
 ## Requirements
 

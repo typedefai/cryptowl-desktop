@@ -8,10 +8,12 @@
 #include "crypto/Crockford32.h"
 #include "crypto/Errors.h"
 #include "crypto/Hash.h"
+#include "vault/VaultDatabase.h"
 
 #include <QByteArray>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -20,6 +22,7 @@
 
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <utility>
 
@@ -206,6 +209,17 @@ VaultUnlocker::Result VaultUnlocker::unlock(const QString &vaultPath,
         if (vaultKeyBytes.size() != 32) {
             secureWipe(vaultKeyBytes);
             return failure(QStringLiteral("Invalid vault key length."));
+        }
+
+        const QString databasePath = QDir(vaultPath).filePath(QStringLiteral("vault.db"));
+        if (QFileInfo::exists(databasePath)) {
+            std::string databaseError;
+            if (!cryptowl::vault::VaultDatabase::verify(
+                    databasePath.toUtf8().toStdString(), vaultKeyBytes, &databaseError)) {
+                secureWipe(vaultKeyBytes);
+                return failure(QStringLiteral("Vault database could not be opened: %1")
+                                   .arg(QString::fromStdString(databaseError)));
+            }
         }
 
         Result result;

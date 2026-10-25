@@ -24,6 +24,76 @@ target_include_directories(argon2 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/argon2/incl
 target_compile_definitions(argon2 PRIVATE _GNU_SOURCE)
 set_target_properties(argon2 PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED ON)
 
+# SQLCipher uses the portable LibTomCrypt crypto provider.
+FetchContent_Declare(libtomcrypt
+    URL https://github.com/libtom/libtomcrypt/releases/download/v1.18.2/crypt-1.18.2.tar.xz
+    URL_HASH SHA256=96ad4c3b8336050993c5bc2cf6c057484f2b0f9f763448151567fbab5e767b84
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+
+FetchContent_GetProperties(libtomcrypt)
+if(NOT libtomcrypt_POPULATED)
+    if(POLICY CMP0169)
+        cmake_policy(SET CMP0169 OLD)
+    endif()
+    FetchContent_Populate(libtomcrypt)
+endif()
+
+file(GLOB_RECURSE libtomcrypt_sources
+    "${libtomcrypt_SOURCE_DIR}/src/*.c"
+)
+
+add_library(tomcrypt STATIC ${libtomcrypt_sources})
+target_include_directories(tomcrypt PUBLIC
+    "${libtomcrypt_SOURCE_DIR}/src/headers"
+)
+target_compile_definitions(tomcrypt PRIVATE
+    LTC_SOURCE=1
+    LTC_NO_ASM=1
+)
+set_target_properties(tomcrypt PROPERTIES
+    C_STANDARD 99
+    C_STANDARD_REQUIRED ON
+    AUTOMOC OFF
+    AUTOUIC OFF
+    AUTORCC OFF
+)
+if(MSVC)
+    target_compile_options(tomcrypt PRIVATE /w)
+else()
+    target_compile_options(tomcrypt PRIVATE -w)
+endif()
+if(WIN32)
+    target_link_libraries(tomcrypt PUBLIC advapi32)
+endif()
+
+add_library(sqlcipher STATIC sqlcipher/sqlite3.c)
+target_include_directories(sqlcipher PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/sqlcipher)
+target_compile_definitions(sqlcipher PRIVATE
+    SQLITE_HAS_CODEC=1
+    SQLITE_TEMP_STORE=2
+    SQLITE_THREADSAFE=1
+    SQLITE_EXTRA_INIT=sqlcipher_extra_init
+    SQLITE_EXTRA_SHUTDOWN=sqlcipher_extra_shutdown
+    SQLITE_OMIT_LOAD_EXTENSION=1
+    SQLCIPHER_CRYPTO_LIBTOMCRYPT=1
+)
+if(MSVC)
+    target_compile_definitions(sqlcipher PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+if(UNIX)
+    find_package(Threads REQUIRED)
+    target_link_libraries(sqlcipher PUBLIC Threads::Threads)
+endif()
+target_link_libraries(sqlcipher PUBLIC tomcrypt)
+set_target_properties(sqlcipher PROPERTIES
+    C_STANDARD 99
+    C_STANDARD_REQUIRED ON
+    AUTOMOC OFF
+    AUTOUIC OFF
+    AUTORCC OFF
+)
+
 # OS secure storage for the per-vault device secret.
 FetchContent_Declare(qtkeychain
     URL https://github.com/frankosterfeld/qtkeychain/archive/refs/tags/0.17.0.tar.gz

@@ -27,7 +27,7 @@ interop beyond the vault format itself.
 | D1 | GUI | **Qt Widgets** (`WindowsVista` where available, classic Windows/Fusion fallback; Selawik UI font) | proven for this class of app (KeePassXC); no QML rewrite; compact Vista-like look |
 | D2 | App crypto | **vendored mbedTLS 3.6.7** (AES-256-GCM, HMAC-SHA256, SHA-256, CSPRNG) + **vendored phc-winner-argon2** | hermetic, cross-platform, no system OpenSSL; argon2 matches the Android vendored version |
 | D3 | HKDF | own RFC 5869 implementation over HMAC-SHA256 | mirrors the reference line-by-line (incl. empty-salt → 32 zero bytes); trivial and vector-locked |
-| D4 | SQLCipher | P2: real SQLCipher, provider per platform — macOS `CommonCrypto`, Linux `OpenSSL`, Windows TBD | devkit precedent (`SQLCIPHER_CRYPTO_CC`/`OPENSSL`); on-disk format is provider-independent |
+| D4 | SQLCipher | SQLCipher 4.19.0 vendored amalgamation with the LibTomCrypt provider | hermetic cross-platform build with no system OpenSSL/CommonCrypto dependency; raw key expression `x'<hex>'` only |
 | D5 | UX | password-manager layout: sidebar (type filters + pinned) + search-as-you-type + item list + detail/editor | 1Password/Bitwarden pattern; `items.md`'s Explorer style stays the dev-tooling pattern |
 | D6 | Tiers on desktop | C = vault unlock; S = per-item DEK, KEK **dev-bound** to SMK (re-prompt to reveal); T = secondary password (Argon2id → TS-KEK → TopSecretKEK) | no biometrics on desktop; matches `items.md` dev binding and `design.md` semantics |
 | D7 | Device secret | QtKeychain (macOS Keychain, Windows Credential Store, Linux Secret Service); legacy `<vault>/device_secret` (32 raw / 64 hex) migrated on first unlock | cross-platform secure-store analog to Android Keystore |
@@ -75,8 +75,8 @@ logged.
 - ◐ key chain: `P` → TMK (Argon2id) → SMK (HKDF, info=vaultId) →
   wrap/unwrap `vault_key:smk`; re-sign rules on password change pending
 - ◐ `device_secret`: QtKeychain load/store + legacy file migration; availability depends on the platform secure-store backend
-- ☐ SQLCipher open/create with **raw key expression `x'<hex>'`**; execute
-  `docs/schema.sql` (idempotent, fixed at creation)
+- ◐ SQLCipher create/verify with **raw key expression `x'<hex>'`**; execute
+  `docs/schema.sql` (idempotent, fixed at creation); open for item access pending
 - ◐ create / open / lock; meta tamper detection and wrong-password failure done;
   `config.sig` verification and DB close pending
 - portable-vault test (copy dir, reopen), tamper tests
@@ -108,7 +108,8 @@ logged.
   parent and rejects non-empty/invalid paths
 - ✅ Create vault: master-password confirmation; writes `vault.meta` /
   `config.json` / `config.sig` and stores the device secret in QtKeychain
-- ☐ Create/open the SQLCipher `vault.db` with the created/unwrapped VaultKey
+- ◐ Create/verify the SQLCipher `vault.db`; opening it for item access after
+  unlock is pending
 - Auto-lock timer
 - Browser: sidebar + filter/search + list + detail; C/S/T badges; empty states
 - Note editor (C): plain text + markdown preview (`QTextDocument::setMarkdown`)
@@ -122,7 +123,7 @@ logged.
 - change master password (fast rewrap; re-sign both MACs)
 - zeroize-on-lock everywhere; no-secret logging audit
 - backup/export `.vbp` (opt-in)
-- Windows SQLCipher provider + CI packaging (`qt_deploy_*` / windeployqt)
+- Windows/macOS packaging (`qt_deploy_*` / windeployqt)
 
 ## Verification
 

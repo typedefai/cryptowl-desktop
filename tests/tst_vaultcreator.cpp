@@ -2,6 +2,7 @@
 #include "VaultUnlocker.h"
 
 #include "crypto/Bytes.h"
+#include "vault/VaultDatabase.h"
 
 #include <QDir>
 #include <QFile>
@@ -10,6 +11,8 @@
 #include <QJsonObject>
 #include <QTemporaryDir>
 #include <QtTest>
+
+#include <string>
 
 using namespace cryptowl::crypto;
 
@@ -58,6 +61,7 @@ void TestVaultCreator::createsUnlockableVault()
     QVERIFY(QFileInfo::exists(QDir(vault).filePath(QStringLiteral("vault.meta"))));
     QVERIFY(QFileInfo::exists(QDir(vault).filePath(QStringLiteral("config.json"))));
     QVERIFY(QFileInfo::exists(QDir(vault).filePath(QStringLiteral("config.sig"))));
+    QVERIFY(QFileInfo::exists(QDir(vault).filePath(QStringLiteral("vault.db"))));
     QVERIFY(!QFileInfo::exists(QDir(vault).filePath(QStringLiteral("device_secret"))));
     QCOMPARE(capturedSecret.size(), std::size_t(32));
 
@@ -79,6 +83,12 @@ void TestVaultCreator::createsUnlockableVault()
     const auto unlocked =
         VaultUnlocker::unlock(vault, QString::fromLatin1(kPassword), false);
     QVERIFY2(unlocked.ok, qPrintable(unlocked.error));
+
+    std::string databaseError;
+    QVERIFY2(cryptowl::vault::VaultDatabase::verify(
+                 QDir(vault).filePath(QStringLiteral("vault.db")).toStdString(),
+                 unlocked.vaultKey.span(), &databaseError),
+             databaseError.c_str());
 }
 
 void TestVaultCreator::createsVaultInNewDirectory()
@@ -95,6 +105,7 @@ void TestVaultCreator::createsVaultInNewDirectory()
     QVERIFY2(result.ok, qPrintable(result.error));
     QVERIFY(QFileInfo(vault).isDir());
     QVERIFY(QFileInfo::exists(QDir(vault).filePath(QStringLiteral("vault.meta"))));
+    QVERIFY(QFileInfo::exists(QDir(vault).filePath(QStringLiteral("vault.db"))));
 }
 
 void TestVaultCreator::cleansUpWhenSecretStorageFails()
