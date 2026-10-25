@@ -43,3 +43,15 @@ qt_add_executable(tst_vaultcreator
 target_link_libraries(tst_vaultcreator PRIVATE cryptowl_ui Qt6::Test)
 
 add_test(NAME tst_vaultcreator COMMAND tst_vaultcreator)
+
+qt_add_executable(tst_vaultpathdialog
+    tst_vaultpathdialog.cpp
+)
+
+target_link_libraries(tst_vaultpathdialog PRIVATE cryptowl_ui Qt6::Test)
+
+add_test(NAME tst_vaultpathdialog COMMAND tst_vaultpathdialog)
+
+set_tests_properties(tst_vaultpathdialog PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)

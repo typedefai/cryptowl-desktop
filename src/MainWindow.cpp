@@ -4,13 +4,12 @@
 #include "UnlockVaultDialog.h"
 #include "VaultCreator.h"
 #include "VaultDirectory.h"
+#include "VaultPathDialog.h"
 #include "WelcomePage.h"
 
 #include <QAction>
 #include <QApplication>
 #include <QDialog>
-#include <QDir>
-#include <QFileDialog>
 #include <QFileInfo>
 #include <QMenu>
 #include <QMenuBar>
@@ -69,17 +68,11 @@ void MainWindow::createMenus()
 
 void MainWindow::createVault()
 {
-    const QString dir = QFileDialog::getExistingDirectory(
-        this, tr("Choose an empty folder for the new vault"));
-    if (dir.isEmpty())
+    VaultPathDialog pathDialog(VaultPathDialog::Mode::Create, this);
+    if (pathDialog.exec() != QDialog::Accepted)
         return;
 
-    if (!QDir(dir).entryList(QDir::AllEntries | QDir::NoDotAndDotDot).isEmpty()) {
-        QMessageBox::warning(this, tr("Folder is not empty"),
-                             tr("Choose an empty folder for the new vault."));
-        return;
-    }
-
+    const QString dir = pathDialog.path();
     const QString vaultName = QFileInfo(dir).fileName();
     if (vaultName.isEmpty()) {
         QMessageBox::warning(this, tr("Invalid vault folder"),
@@ -115,22 +108,11 @@ void MainWindow::createVault()
 
 void MainWindow::openVault()
 {
-    while (true) {
-        const QString dir =
-            QFileDialog::getExistingDirectory(this, tr("Open CryptOwl vault"));
-        if (dir.isEmpty())
-            return;
+    VaultPathDialog dialog(VaultPathDialog::Mode::Open, this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
 
-        if (isVaultDirectory(dir)) {
-            openVaultAt(dir);
-            return;
-        }
-
-        QMessageBox::warning(
-            this, tr("Not a CryptOwl vault"),
-            tr("The selected folder is not a CryptOwl vault.\n\n"
-               "Choose a vault folder that contains a vault.meta file."));
-    }
+    openVaultAt(dialog.path());
 }
 
 void MainWindow::openVaultAt(QString path)

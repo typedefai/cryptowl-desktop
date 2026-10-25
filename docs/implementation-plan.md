@@ -103,9 +103,10 @@ logged.
   (max 10, remove from list)
 - ✅ Password unlock dialog: derive P → TMK → SMK, verify the `vault.meta` MAC,
   unwrap `vault_key:smk`, and hold the key in memory until lock
-- ✅ Create vault: empty-folder picker + master-password confirmation; writes
-  `vault.meta` / `config.json` / `config.sig` and stores the device secret in
-  QtKeychain
+- ✅ Open/create path dialog: editable path field + Browse, with inline
+  vault/empty-folder validation
+- ✅ Create vault: master-password confirmation; writes `vault.meta` /
+  `config.json` / `config.sig` and stores the device secret in QtKeychain
 - ☐ Create/open the SQLCipher `vault.db` with the created/unwrapped VaultKey
 - Auto-lock timer
 - Browser: sidebar + filter/search + list + detail; C/S/T badges; empty states
