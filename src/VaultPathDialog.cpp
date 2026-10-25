@@ -13,6 +13,7 @@
 #include <QLineEdit>
 #include <QPalette>
 #include <QPushButton>
+#include <QStandardPaths>
 #include <QVBoxLayout>
 
 namespace {
@@ -46,7 +47,8 @@ VaultPathDialog::VaultPathDialog(Mode mode, QWidget *parent)
 
     auto *hint = new QLabel(
         openMode ? tr("Enter the path of a CryptOwl vault folder, or browse to select it.")
-                 : tr("Enter an existing empty folder, or browse to select it."),
+                 : tr("Enter a folder path, or browse to select it. If the folder does "
+                      "not exist it will be created; otherwise it must be empty."),
         this);
     hint->setWordWrap(true);
 
@@ -55,6 +57,12 @@ VaultPathDialog::VaultPathDialog(Mode mode, QWidget *parent)
     m_pathEdit->setClearButtonEnabled(true);
     m_pathEdit->setPlaceholderText(openMode ? tr("/path/to/vault")
                                             : tr("/path/to/empty-folder"));
+
+    QString initialPath =
+        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    if (initialPath.isEmpty())
+        initialPath = QDir::homePath();
+    setPath(initialPath);
 
     m_browseButton = new QPushButton(tr("Browse…"), this);
     m_browseButton->setObjectName(QStringLiteral("vaultBrowse"));
@@ -142,24 +150,42 @@ void VaultPathDialog::tryAccept()
     }
 
     const QFileInfo info(selected);
-    if (!info.exists()) {
-        setError(tr("The selected folder does not exist."));
-        return;
-    }
-    if (!info.isDir()) {
-        setError(tr("The selected path is not a folder."));
-        return;
-    }
-
     if (m_mode == Mode::Open) {
+        if (!info.exists()) {
+            setError(tr("The selected folder does not exist."));
+            return;
+        }
+        if (!info.isDir()) {
+            setError(tr("The selected path is not a folder."));
+            return;
+        }
         if (!isVaultDirectory(selected)) {
             setError(tr("This is not a CryptOwl vault. Choose a folder containing "
                         "vault.meta."));
             return;
         }
-    } else if (!isEmptyDirectory(selected)) {
-        setError(tr("The selected folder is not empty."));
-        return;
+    } else {
+        if (info.exists()) {
+            if (!info.isDir()) {
+                setError(tr("The selected path is not a folder."));
+                return;
+            }
+            if (!isEmptyDirectory(selected)) {
+                setError(tr("The selected folder is not empty. Choose another folder "
+                            "or enter a new folder path."));
+                return;
+            }
+        } else {
+            const QFileInfo parent(info.absolutePath());
+            if (!parent.exists()) {
+                setError(tr("The parent folder does not exist."));
+                return;
+            }
+            if (!parent.isDir()) {
+                setError(tr("The parent path is not a folder."));
+                return;
+            }
+        }
     }
 
     setError(QString());

@@ -98,19 +98,27 @@ VaultCreator::Result VaultCreator::create(const QString &vaultPath,
                                           const SecretWriter &secretWriter)
 {
     const QFileInfo directory(vaultPath);
-    if (!directory.isDir())
-        return failure(QStringLiteral("The vault folder does not exist."));
+    if (directory.exists()) {
+        if (!directory.isDir())
+            return failure(QStringLiteral("The vault path is not a folder."));
+
+        const QStringList existing =
+            QDir(vaultPath).entryList(QDir::AllEntries | QDir::NoDotAndDotDot);
+        if (!existing.isEmpty())
+            return failure(QStringLiteral("The vault folder must be empty."));
+    } else {
+        const QFileInfo parent(directory.absolutePath());
+        if (!parent.exists())
+            return failure(QStringLiteral("The parent folder does not exist."));
+        if (!parent.isDir())
+            return failure(QStringLiteral("The parent path is not a folder."));
+    }
 
     const QString vaultId = directory.fileName();
     if (vaultId.isEmpty())
         return failure(QStringLiteral("The vault folder must have a name."));
     if (password.isEmpty())
         return failure(QStringLiteral("The master password must not be empty."));
-
-    const QStringList existing =
-        QDir(vaultPath).entryList(QDir::AllEntries | QDir::NoDotAndDotDot);
-    if (!existing.isEmpty())
-        return failure(QStringLiteral("The vault folder must be empty."));
 
     Bytes argon2Salt = randomBytes(32);
     Bytes hkdfSalt = randomBytes(32);
@@ -201,15 +209,26 @@ VaultCreator::Result VaultCreator::create(const QString &vaultPath,
         QDir(vaultPath).filePath(QStringLiteral("vault.meta")),
     };
 
+    bool createdDirectory = false;
+    if (!directory.exists()) {
+        if (!QDir().mkpath(vaultPath))
+            return failure(QStringLiteral("Could not create the vault folder."));
+        createdDirectory = true;
+    }
+
     std::vector<QString> created;
     auto failAndCleanup = [&](const QString &message) {
         removeFiles(created);
+        if (createdDirectory)
+            QDir().rmdir(vaultPath);
         return failure(message);
     };
 
     QString writeError;
-    if (!writeFile(paths[0], configJson, &writeError))
-        return failure(QStringLiteral("Could not write config.json: %1").arg(writeError));
+    if (!writeFile(paths[0], configJson, &writeError)) {
+        return failAndCleanup(
+            QStringLiteral("Could not write config.json: %1").arg(writeError));
+    }
     created.push_back(paths[0]);
 
     if (!writeFile(paths[1], encode(configMac).toUtf8(), &writeError))

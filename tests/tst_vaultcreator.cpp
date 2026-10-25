@@ -31,7 +31,9 @@ class TestVaultCreator : public QObject
 
 private slots:
     void createsUnlockableVault();
+    void createsVaultInNewDirectory();
     void cleansUpWhenSecretStorageFails();
+    void rejectsMissingParent();
     void rejectsNonEmptyFolder();
 };
 
@@ -79,12 +81,28 @@ void TestVaultCreator::createsUnlockableVault()
     QVERIFY2(unlocked.ok, qPrintable(unlocked.error));
 }
 
+void TestVaultCreator::createsVaultInNewDirectory()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString vault = QDir(dir.path()).filePath(QStringLiteral("new-vault"));
+    QVERIFY(!QFileInfo::exists(vault));
+
+    const auto result = VaultCreator::create(
+        vault, QString::fromLatin1(kPassword),
+        [](const QString &, std::span<const std::uint8_t>,
+           std::span<const std::uint8_t>, QString *) { return true; });
+    QVERIFY2(result.ok, qPrintable(result.error));
+    QVERIFY(QFileInfo(vault).isDir());
+    QVERIFY(QFileInfo::exists(QDir(vault).filePath(QStringLiteral("vault.meta"))));
+}
+
 void TestVaultCreator::cleansUpWhenSecretStorageFails()
 {
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
-    const QString vault = QDir(dir.path()).filePath(QStringLiteral("personal"));
-    QVERIFY(QDir().mkpath(vault));
+    const QString vault = QDir(dir.path()).filePath(QStringLiteral("new-vault"));
+    QVERIFY(!QFileInfo::exists(vault));
 
     const auto result = VaultCreator::create(
         vault, QString::fromLatin1(kPassword),
@@ -96,9 +114,24 @@ void TestVaultCreator::cleansUpWhenSecretStorageFails()
         });
     QVERIFY(!result.ok);
     QVERIFY(result.error.contains(QStringLiteral("device secret")));
-    QVERIFY(!QFileInfo::exists(QDir(vault).filePath(QStringLiteral("vault.meta"))));
-    QVERIFY(!QFileInfo::exists(QDir(vault).filePath(QStringLiteral("config.json"))));
-    QVERIFY(!QFileInfo::exists(QDir(vault).filePath(QStringLiteral("config.sig"))));
+    QVERIFY(!QFileInfo::exists(vault));
+}
+
+void TestVaultCreator::rejectsMissingParent()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString parent = QDir(dir.path()).filePath(QStringLiteral("missing"));
+    const QString vault = QDir(parent).filePath(QStringLiteral("new-vault"));
+
+    const auto result = VaultCreator::create(
+        vault, QString::fromLatin1(kPassword),
+        [](const QString &, std::span<const std::uint8_t>,
+           std::span<const std::uint8_t>, QString *) { return true; });
+    QVERIFY(!result.ok);
+    QVERIFY(result.error.contains(QStringLiteral("parent"), Qt::CaseInsensitive));
+    QVERIFY(!QFileInfo::exists(parent));
+    QVERIFY(!QFileInfo::exists(vault));
 }
 
 void TestVaultCreator::rejectsNonEmptyFolder()
