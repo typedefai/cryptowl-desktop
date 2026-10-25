@@ -37,9 +37,10 @@ endif()
 add_library(sqlcipher STATIC sqlcipher/sqlite3.c)
 target_include_directories(sqlcipher PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/sqlcipher)
 target_compile_definitions(sqlcipher PRIVATE
-    SQLITE_HAS_CODEC=1
     SQLITE_TEMP_STORE=2
     SQLITE_THREADSAFE=1
+    SQLITE_USE_URI=1
+    SQLITE_DIRECT_OVERFLOW_READ=0
     SQLITE_EXTRA_INIT=sqlcipher_extra_init
     SQLITE_EXTRA_SHUTDOWN=sqlcipher_extra_shutdown
     SQLITE_OMIT_LOAD_EXTENSION=1

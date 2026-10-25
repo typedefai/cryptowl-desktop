@@ -92,8 +92,6 @@ bool prepareKey(Database &db, std::span<const std::uint8_t> vaultKey,
         return false;
     }
 
-    if (!db.exec("PRAGMA cipher_compatibility = 4;", error))
-        return false;
     return db.exec(rawKeyPragma(vaultKey), error);
 }
 

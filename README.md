@@ -17,13 +17,16 @@ QtKeychain-backed device-secret migration, vault creation with a SQLCipher
 format. `config.sig` verification and the item layer are next — see
 [docs/implementation-plan.md](docs/implementation-plan.md).
 
+> SQLCipher **5.0.0-beta.1** is pre-release and uses v5 defaults; existing
+> SQLCipher 4 vault databases are intentionally not compatible.
+
 ## Requirements
 
 - CMake ≥ 3.24 and a C++20 compiler (MSVC 2022, clang, gcc)
 - Qt 6.8+ with the Widgets module (CI builds against 6.9.3; local development is
   tested with Qt 6.12)
-- OpenSSL 3.0+ development libraries (macOS/Windows: install manually; Linux:
-  `libssl-dev` or equivalent)
+- OpenSSL 3.5.8 LTS recommended (3.0+ accepted) development libraries
+  (macOS/Windows: install manually; Linux: `libssl-dev` or equivalent)
 - QtKeychain (fetched automatically) for device-secret storage; Linux needs a
   Secret Service or KWallet backend
 - Ninja (recommended; ships with the Qt installer under `Tools/Ninja`)
