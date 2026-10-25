@@ -49,7 +49,6 @@ target_include_directories(tomcrypt PUBLIC
 )
 target_compile_definitions(tomcrypt PRIVATE
     LTC_SOURCE=1
-    LTC_NO_ASM=1
 )
 set_target_properties(tomcrypt PROPERTIES
     C_STANDARD 99
@@ -67,6 +66,9 @@ if(WIN32)
     target_link_libraries(tomcrypt PUBLIC advapi32)
 endif()
 
+# The vendored SQLCipher amalgamation is generated with
+# --with-tempstore=yes. These are the CMake equivalents of the CFLAGS shown in
+# SQLCipher's build documentation; the provider is LibTomCrypt.
 add_library(sqlcipher STATIC sqlcipher/sqlite3.c)
 target_include_directories(sqlcipher PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/sqlcipher)
 target_compile_definitions(sqlcipher PRIVATE

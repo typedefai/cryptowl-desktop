@@ -11,8 +11,13 @@ mkdir build && cd build
 make sqlite3.c
 ```
 
+The configure step only generates the amalgamation; the CMake build is what
+selects SQLCipher's codec and provider macros. `--with-tempstore=yes` makes the
+generated defaults match our `SQLITE_TEMP_STORE=2`; `--disable-tcl` is only a
+convenience for generating the amalgamation without building Tcl bindings.
+
 The resulting `sqlite3.c`, `sqlite3.h`, and `sqlite3ext.h` are vendored here so
-the build is hermetic and does not need Tcl.
+the build is hermetic and does not need Tcl or the SQLCipher autotools build.
 
 The bundled library is built with the SQLCipher LibTomCrypt provider; see
 `third_party/CMakeLists.txt`. Upstream license: `LICENSE.md`.
