@@ -22,38 +22,46 @@ format. `config.sig` verification and the item layer are next — see
 - CMake ≥ 3.24 and a C++20 compiler (MSVC 2022, clang, gcc)
 - Qt 6.8+ with the Widgets module (CI builds against 6.9.3; local development is
   tested with Qt 6.12)
+- OpenSSL 3.0+ development libraries (macOS/Windows: install manually; Linux:
+  `libssl-dev` or equivalent)
 - QtKeychain (fetched automatically) for device-secret storage; Linux needs a
   Secret Service or KWallet backend
 - Ninja (recommended; ships with the Qt installer under `Tools/Ninja`)
 
 ## Build
 
-macOS (Qt installed at `~/Qt/6.12.0/macos`):
+macOS (Qt installed at `~/Qt/6.12.0/macos`, OpenSSL via Homebrew):
 
 ```bash
-cmake -S . -B build/debug -G Ninja -DCMAKE_PREFIX_PATH="$HOME/Qt/6.12.0/macos"
+cmake -S . -B build/debug -G Ninja \
+  -DCMAKE_PREFIX_PATH="$HOME/Qt/6.12.0/macos" \
+  -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)"
 cmake --build build/debug
 ```
 
-Linux (distro Qt, e.g. `qt6-base-dev`):
+Linux (distro Qt, e.g. `qt6-base-dev`, plus `libssl-dev`):
 
 ```bash
 cmake -S . -B build/debug -G Ninja
 cmake --build build/debug
 ```
 
-Windows (Qt online installer, MSVC):
+Windows (Qt online installer, MSVC; point OpenSSL at your install):
 
 ```powershell
-cmake -S . -B build/debug -DCMAKE_PREFIX_PATH="C:\Qt\6.9.3\msvc2022_64"
+cmake -S . -B build/debug `
+  -DCMAKE_PREFIX_PATH="C:\Qt\6.9.3\msvc2022_64" `
+  -DOPENSSL_ROOT_DIR="C:\Program Files\OpenSSL-Win64"
 cmake --build build/debug --config Debug
 ```
 
 Or use the CMake presets (`debug` / `release`). They read the Qt location from
-`QTDIR` (the Qt Creator convention) — or pass `-DCMAKE_PREFIX_PATH=…` directly:
+`QTDIR` (the Qt Creator convention) — or pass `-DCMAKE_PREFIX_PATH=…` directly.
+On macOS/Windows, set `OPENSSL_ROOT_DIR` in the environment first:
 
 ```bash
 export QTDIR="$HOME/Qt/6.12.0/macos"        # Windows: set QTDIR=C:\Qt\6.9.3\msvc2022_64
+export OPENSSL_ROOT_DIR="$(brew --prefix openssl@3)"  # Windows: your OpenSSL prefix
 cmake --preset debug
 cmake --build --preset debug
 ctest --preset debug

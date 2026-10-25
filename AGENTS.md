@@ -77,11 +77,10 @@ deliberately).
   mbedTLS 3.6.7 (AES-256-GCM, HMAC-SHA256, SHA-256, CSPRNG), phc-winner-argon2
   (vendored under `third_party/argon2/`, upstream code, do not modify), and
   SQLCipher 4.19.0 (vendored amalgamation under `third_party/sqlcipher/`).
-  The first configure downloads mbedTLS (~5 MB), LibTomCrypt 1.18.2 (~2.5 MB),
-  and QtKeychain 0.17.0 (~68 KB).
-- SQLCipher uses the LibTomCrypt provider, so no system OpenSSL/CommonCrypto
-  dependency. Always pass the VaultKey as the raw-key expression `x'<hex>'`,
-  never as a bare blob.
+  The first configure downloads mbedTLS (~5 MB) and QtKeychain 0.17.0 (~68 KB).
+- SQLCipher uses the OpenSSL provider. **OpenSSL 3.0+ must be installed
+  manually** on macOS/Windows (Linux: `libssl-dev` or equivalent). Always pass
+  the VaultKey as the raw-key expression `x'<hex>'`, never as a bare blob.
 - Device secrets use QtKeychain (macOS Keychain, Windows Credential Store,
   Linux Secret Service); legacy vault `device_secret` files are migrated on
   unlock and removed after a successful write.

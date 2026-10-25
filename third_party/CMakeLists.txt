@@ -24,51 +24,16 @@ target_include_directories(argon2 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/argon2/incl
 target_compile_definitions(argon2 PRIVATE _GNU_SOURCE)
 set_target_properties(argon2 PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED ON)
 
-# SQLCipher uses the portable LibTomCrypt crypto provider.
-FetchContent_Declare(libtomcrypt
-    URL https://github.com/libtom/libtomcrypt/releases/download/v1.18.2/crypt-1.18.2.tar.xz
-    URL_HASH SHA256=96ad4c3b8336050993c5bc2cf6c057484f2b0f9f763448151567fbab5e767b84
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-)
-
-FetchContent_GetProperties(libtomcrypt)
-if(NOT libtomcrypt_POPULATED)
-    if(POLICY CMP0169)
-        cmake_policy(SET CMP0169 OLD)
-    endif()
-    FetchContent_Populate(libtomcrypt)
-endif()
-
-file(GLOB_RECURSE libtomcrypt_sources
-    "${libtomcrypt_SOURCE_DIR}/src/*.c"
-)
-
-add_library(tomcrypt STATIC ${libtomcrypt_sources})
-target_include_directories(tomcrypt PUBLIC
-    "${libtomcrypt_SOURCE_DIR}/src/headers"
-)
-target_compile_definitions(tomcrypt PRIVATE
-    LTC_SOURCE=1
-)
-set_target_properties(tomcrypt PROPERTIES
-    C_STANDARD 99
-    C_STANDARD_REQUIRED ON
-    AUTOMOC OFF
-    AUTOUIC OFF
-    AUTORCC OFF
-)
-if(MSVC)
-    target_compile_options(tomcrypt PRIVATE /w)
+if(APPLE)
+    find_package(OpenSSL 3.0 REQUIRED COMPONENTS Crypto
+        HINTS /opt/homebrew/opt/openssl@3 /usr/local/opt/openssl@3 /usr/local/openssl)
 else()
-    target_compile_options(tomcrypt PRIVATE -w)
-endif()
-if(WIN32)
-    target_link_libraries(tomcrypt PUBLIC advapi32)
+    find_package(OpenSSL 3.0 REQUIRED COMPONENTS Crypto)
 endif()
 
 # The vendored SQLCipher amalgamation is generated with
 # --with-tempstore=yes. These are the CMake equivalents of the CFLAGS shown in
-# SQLCipher's build documentation; the provider is LibTomCrypt.
+# SQLCipher's build documentation; the provider is OpenSSL.
 add_library(sqlcipher STATIC sqlcipher/sqlite3.c)
 target_include_directories(sqlcipher PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/sqlcipher)
 target_compile_definitions(sqlcipher PRIVATE
@@ -78,7 +43,7 @@ target_compile_definitions(sqlcipher PRIVATE
     SQLITE_EXTRA_INIT=sqlcipher_extra_init
     SQLITE_EXTRA_SHUTDOWN=sqlcipher_extra_shutdown
     SQLITE_OMIT_LOAD_EXTENSION=1
-    SQLCIPHER_CRYPTO_LIBTOMCRYPT=1
+    SQLCIPHER_CRYPTO_OPENSSL=1
 )
 if(MSVC)
     target_compile_definitions(sqlcipher PRIVATE _CRT_SECURE_NO_WARNINGS)
@@ -87,7 +52,7 @@ if(UNIX)
     find_package(Threads REQUIRED)
     target_link_libraries(sqlcipher PUBLIC Threads::Threads)
 endif()
-target_link_libraries(sqlcipher PUBLIC tomcrypt)
+target_link_libraries(sqlcipher PUBLIC OpenSSL::Crypto)
 set_target_properties(sqlcipher PROPERTIES
     C_STANDARD 99
     C_STANDARD_REQUIRED ON

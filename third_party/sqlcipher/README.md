@@ -19,5 +19,6 @@ convenience for generating the amalgamation without building Tcl bindings.
 The resulting `sqlite3.c`, `sqlite3.h`, and `sqlite3ext.h` are vendored here so
 the build is hermetic and does not need Tcl or the SQLCipher autotools build.
 
-The bundled library is built with the SQLCipher LibTomCrypt provider; see
-`third_party/CMakeLists.txt`. Upstream license: `LICENSE.md`.
+The bundled library is built with SQLCipher's OpenSSL provider; see
+`third_party/CMakeLists.txt`. OpenSSL 3.0+ is installed separately. Upstream
+license: `LICENSE.md`.
