@@ -13,6 +13,7 @@ public:
                        std::string *error = nullptr);
     static bool verify(const std::string &path, std::span<const std::uint8_t> vaultKey,
                        std::string *error = nullptr);
+    static std::string cipherVersion();
 };
 
 }

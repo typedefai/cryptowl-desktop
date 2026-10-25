@@ -67,3 +67,15 @@ add_test(NAME tst_vaultview COMMAND tst_vaultview)
 set_tests_properties(tst_vaultview PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
+
+qt_add_executable(tst_vaultinfodialog
+    tst_vaultinfodialog.cpp
+)
+
+target_link_libraries(tst_vaultinfodialog PRIVATE cryptowl_ui Qt6::Test)
+
+add_test(NAME tst_vaultinfodialog COMMAND tst_vaultinfodialog)
+
+set_tests_properties(tst_vaultinfodialog PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)

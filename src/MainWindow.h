@@ -29,6 +29,7 @@ private slots:
     void unlockVault(const QString &path);
     void lockVault(const QString &path);
     void closeVaultTab(int index);
+    void showVaultInfo();
     void showAbout();
 
 private:
@@ -52,6 +53,7 @@ private:
     QAction *m_newVaultAction = nullptr;
     QAction *m_openVaultAction = nullptr;
     QAction *m_lockVaultAction = nullptr;
+    QAction *m_vaultInfoAction = nullptr;
     QAction *m_addEntryAction = nullptr;
     QAction *m_editEntryAction = nullptr;
     QAction *m_deleteEntryAction = nullptr;

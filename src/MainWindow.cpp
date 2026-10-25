@@ -4,6 +4,7 @@
 #include "UnlockVaultDialog.h"
 #include "VaultCreator.h"
 #include "VaultDirectory.h"
+#include "VaultInfoDialog.h"
 #include "VaultPathDialog.h"
 #include "VaultView.h"
 #include "WelcomePage.h"
@@ -94,6 +95,10 @@ void MainWindow::createActions()
         style()->standardIcon(QStyle::SP_DialogCloseButton), tr("&Lock vault"), this);
     connect(m_lockVaultAction, &QAction::triggered, this, &MainWindow::lockCurrentVault);
 
+    m_vaultInfoAction = new QAction(
+        style()->standardIcon(QStyle::SP_MessageBoxInformation), tr("Vault &info…"), this);
+    connect(m_vaultInfoAction, &QAction::triggered, this, &MainWindow::showVaultInfo);
+
     m_addEntryAction = new QAction(
         style()->standardIcon(QStyle::SP_FileIcon), tr("&Add entry…"), this);
     connect(m_addEntryAction, &QAction::triggered, this, [this] {
@@ -149,6 +154,7 @@ void MainWindow::createMenus()
     fileMenu->addAction(m_openVaultAction);
     fileMenu->addSeparator();
     fileMenu->addAction(m_lockVaultAction);
+    fileMenu->addAction(m_vaultInfoAction);
     fileMenu->addSeparator();
 
     QAction *quitAction = fileMenu->addAction(tr("E&xit"));
@@ -319,6 +325,17 @@ void MainWindow::closeVaultTab(int index)
         lockVault(view->vaultPath());
 }
 
+void MainWindow::showVaultInfo()
+{
+    auto *view = currentVaultView();
+    if (!view)
+        return;
+
+    const QString path = canonicalVaultPath(view->vaultPath());
+    VaultInfoDialog dialog(path, m_unlockedVaults.contains(path), this);
+    dialog.exec();
+}
+
 void MainWindow::showVault(const QString &rawPath)
 {
     const QString path = canonicalVaultPath(rawPath);
@@ -352,8 +369,9 @@ void MainWindow::updateWorkspaceActions()
 {
     const bool hasVault = currentVaultView() != nullptr;
     const QList<QAction *> actions = {
-        m_lockVaultAction, m_addEntryAction, m_editEntryAction, m_deleteEntryAction,
-        m_copyPasswordAction, m_copyUsernameAction, m_detailsAction, m_iconsAction,
+        m_lockVaultAction, m_vaultInfoAction, m_addEntryAction, m_editEntryAction,
+        m_deleteEntryAction, m_copyPasswordAction, m_copyUsernameAction, m_detailsAction,
+        m_iconsAction,
     };
     for (QAction *action : actions)
         action->setEnabled(hasVault);

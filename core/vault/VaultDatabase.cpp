@@ -11,6 +11,8 @@
 #include <string>
 #include <string_view>
 
+extern "C" char *sqlcipher_version(void);
+
 namespace cryptowl::vault {
 
 namespace {
@@ -166,6 +168,12 @@ bool VaultDatabase::verify(const std::string &path,
     if (!prepareKey(db, vaultKey, error))
         return false;
     return hasSchema(db.handle(), error);
+}
+
+std::string VaultDatabase::cipherVersion()
+{
+    const char *version = sqlcipher_version();
+    return version ? version : std::string();
 }
 
 } // namespace cryptowl::vault

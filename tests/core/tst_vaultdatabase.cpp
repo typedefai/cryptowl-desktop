@@ -18,6 +18,7 @@ private slots:
     void verifiesWithCorrectKey();
     void rejectsWrongKey();
     void rejectsExistingDatabase();
+    void reportsCipherVersion();
 };
 
 void TestVaultDatabase::createsEncryptedDatabase()
@@ -74,6 +75,11 @@ void TestVaultDatabase::rejectsExistingDatabase()
     std::string error;
     QVERIFY2(VaultDatabase::create(path.toStdString(), key, &error), error.c_str());
     QVERIFY(!VaultDatabase::create(path.toStdString(), key, &error));
+}
+
+void TestVaultDatabase::reportsCipherVersion()
+{
+    QVERIFY(!VaultDatabase::cipherVersion().empty());
 }
 
 QTEST_APPLESS_MAIN(TestVaultDatabase)

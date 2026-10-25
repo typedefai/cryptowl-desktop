@@ -12,6 +12,8 @@ qt_add_library(cryptowl_ui STATIC
     VaultCreator.h
     VaultCreator.cpp
     VaultDirectory.h
+    VaultInfoDialog.h
+    VaultInfoDialog.cpp
     VaultPathDialog.h
     VaultPathDialog.cpp
     VaultUnlocker.h

@@ -1,18 +1,22 @@
 #include "MainWindow.h"
 #include "RecentVaultsStore.h"
 #include "VaultDirectory.h"
+#include "VaultView.h"
 #include "WelcomePage.h"
 
+#include <QAction>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QLabel>
 #include <QListWidget>
+#include <QMenu>
 #include <QMenuBar>
 #include <QPushButton>
 #include <QSettings>
 #include <QStackedWidget>
 #include <QStatusBar>
+#include <QTabWidget>
 #include <QTemporaryDir>
 #include <QtTest>
 
@@ -26,6 +30,8 @@ private slots:
 
     void hasAppTitle();
     void hasFileMenu();
+    void hasVaultInfoAction();
+    void vaultInfoActionEnabledWithVaultTab();
     void startsWithoutVault();
     void startsOnVaultHome();
     void recognizesVaultDirectories();
@@ -78,6 +84,42 @@ void TestMainWindow::hasFileMenu()
     const QList<QAction *> actions = window.menuBar()->actions();
     QVERIFY(!actions.isEmpty());
     QCOMPARE(actions.constFirst()->text(), QStringLiteral("&File"));
+}
+
+void TestMainWindow::hasVaultInfoAction()
+{
+    MainWindow window;
+    QMenu *fileMenu = window.menuBar()->actions().constFirst()->menu();
+    QVERIFY(fileMenu);
+
+    QAction *infoAction = nullptr;
+    for (QAction *action : fileMenu->actions()) {
+        if (action->text() == QStringLiteral("Vault &info…"))
+            infoAction = action;
+    }
+    QVERIFY(infoAction);
+    QVERIFY(!infoAction->isEnabled());
+}
+
+void TestMainWindow::vaultInfoActionEnabledWithVaultTab()
+{
+    MainWindow window;
+    auto *tabs = window.findChild<QTabWidget *>(QStringLiteral("vaultTabs"));
+    QVERIFY(tabs);
+
+    auto *view = new VaultView(QStringLiteral("/tmp/mock-vault"), tabs);
+    tabs->addTab(view, QStringLiteral("mock"));
+    tabs->setCurrentWidget(view);
+
+    QMenu *fileMenu = window.menuBar()->actions().constFirst()->menu();
+    QVERIFY(fileMenu);
+    QAction *infoAction = nullptr;
+    for (QAction *action : fileMenu->actions()) {
+        if (action->text() == QStringLiteral("Vault &info…"))
+            infoAction = action;
+    }
+    QVERIFY(infoAction);
+    QVERIFY(infoAction->isEnabled());
 }
 
 void TestMainWindow::startsWithoutVault()

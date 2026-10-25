@@ -114,6 +114,9 @@ logged.
 - ◐ KeePass-style vault workspace mock: menu + toolbar, vault tabs, group
   tree, details/icon views, bottom info pane, context-menu operations, and
   hardcoded mock data
+- ✅ File → Vault info dialog: location, SQLCipher/AES-256-GCM settings,
+  Argon2id parameters, key states, wrapped-key metadata, salts, and files;
+  key material and wrapped ciphertext are never displayed
 - Browser: sidebar + filter/search + list + detail; C/S/T badges; empty states
 - Note editor (C): plain text + markdown preview (`QTextDocument::setMarkdown`)
 - Password editor (S): username/url/secret/notes JSON payload, generator,
