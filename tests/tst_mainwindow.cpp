@@ -11,6 +11,7 @@
 #include <QMenuBar>
 #include <QPushButton>
 #include <QSettings>
+#include <QStackedWidget>
 #include <QStatusBar>
 #include <QTemporaryDir>
 #include <QtTest>
@@ -88,7 +89,9 @@ void TestMainWindow::startsWithoutVault()
 void TestMainWindow::startsOnVaultHome()
 {
     MainWindow window;
-    QVERIFY(qobject_cast<WelcomePage *>(window.centralWidget()));
+    auto *stack = qobject_cast<QStackedWidget *>(window.centralWidget());
+    QVERIFY(stack);
+    QVERIFY(qobject_cast<WelcomePage *>(stack->currentWidget()));
 }
 
 void TestMainWindow::recognizesVaultDirectories()
@@ -205,7 +208,7 @@ void TestMainWindow::unlockedStateUpdatesControls()
     store.add(path);
 
     MainWindow window;
-    auto *page = qobject_cast<WelcomePage *>(window.centralWidget());
+    auto *page = window.findChild<WelcomePage *>();
     QVERIFY(page);
 
     auto *status = window.findChild<QLabel *>(QStringLiteral("vaultStatus"));

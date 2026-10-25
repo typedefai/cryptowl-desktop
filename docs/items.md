@@ -206,7 +206,9 @@ vault list on the left, selected-vault details and lock/unlock controls on the
 right. Vault items are large (32 px icon, 56 px rows) because most users have
 only a few vaults. The open action accepts only folders containing
 `vault.meta`; arbitrary folders are rejected. The home uses a small Vista-style
-folder icon drawn in code. The Explorer-style browser below is the in-vault UI.
+folder icon drawn in code. The current in-vault **mock workspace** follows
+KeePass (menu + toolbar, tabs, group tree, details/icons, info pane); the
+Explorer-style browser below remains the target registry-driven UI.
 
 Single-window browser; no dock/tab workspace:
 

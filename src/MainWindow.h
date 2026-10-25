@@ -3,10 +3,16 @@
 #include "RecentVaultsStore.h"
 #include "crypto/ProtectedValue.h"
 
+#include <QHash>
 #include <QMainWindow>
 
 #include <map>
 
+class QAction;
+class QLineEdit;
+class QStackedWidget;
+class QTabWidget;
+class VaultView;
 class WelcomePage;
 
 class MainWindow : public QMainWindow
@@ -22,12 +28,36 @@ private slots:
     void openVaultAt(QString path);
     void unlockVault(const QString &path);
     void lockVault(const QString &path);
+    void closeVaultTab(int index);
     void showAbout();
 
 private:
+    void createActions();
     void createMenus();
+    void createToolBar();
+    void showVault(const QString &path);
+    VaultView *currentVaultView() const;
+    void updateWorkspaceActions();
+    void onVaultTabChanged(int index);
+    void filterCurrentVault(const QString &text);
+    void lockCurrentVault();
 
     RecentVaultsStore m_recentVaults;
     WelcomePage *m_welcome = nullptr;
+    QStackedWidget *m_centerStack = nullptr;
+    QTabWidget *m_vaultTabs = nullptr;
+    QHash<QString, VaultView *> m_vaultViews;
     std::map<QString, cryptowl::crypto::ProtectedValue> m_unlockedVaults;
+
+    QAction *m_newVaultAction = nullptr;
+    QAction *m_openVaultAction = nullptr;
+    QAction *m_lockVaultAction = nullptr;
+    QAction *m_addEntryAction = nullptr;
+    QAction *m_editEntryAction = nullptr;
+    QAction *m_deleteEntryAction = nullptr;
+    QAction *m_copyPasswordAction = nullptr;
+    QAction *m_copyUsernameAction = nullptr;
+    QAction *m_detailsAction = nullptr;
+    QAction *m_iconsAction = nullptr;
+    QLineEdit *m_searchEdit = nullptr;
 };

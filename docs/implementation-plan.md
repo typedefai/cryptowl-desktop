@@ -111,6 +111,9 @@ logged.
 - ◐ Create/verify the SQLCipher `vault.db`; opening it for item access after
   unlock is pending
 - Auto-lock timer
+- ◐ KeePass-style vault workspace mock: menu + toolbar, vault tabs, group
+  tree, details/icon views, bottom info pane, context-menu operations, and
+  hardcoded mock data
 - Browser: sidebar + filter/search + list + detail; C/S/T badges; empty states
 - Note editor (C): plain text + markdown preview (`QTextDocument::setMarkdown`)
 - Password editor (S): username/url/secret/notes JSON payload, generator,
