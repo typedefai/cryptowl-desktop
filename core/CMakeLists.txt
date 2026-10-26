@@ -23,6 +23,14 @@ add_library(cryptowl_core STATIC
     "${CMAKE_CURRENT_BINARY_DIR}/Schema.cpp"
 )
 
+# cryptowl_core is Qt-free. AUTOMOC would only generate an empty
+# mocs_compilation.cpp, which makes ranlib warn about a symbol-less object.
+set_target_properties(cryptowl_core PROPERTIES
+    AUTOMOC OFF
+    AUTOUIC OFF
+    AUTORCC OFF
+)
+
 target_include_directories(cryptowl_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 target_compile_definitions(cryptowl_core PUBLIC
