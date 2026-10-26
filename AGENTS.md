@@ -12,6 +12,8 @@ self-contained.
 - Build: `cmake --build build/debug`
 - Test (headless): `ctest --test-dir build/debug --output-on-failure`
   (`QT_QPA_PLATFORM=offscreen` is already set per test)
+- Crypto trace (off by default; never ship enabled):
+  `cmake -S . -B build/trace -DCRYPTOWL_TRACE_CRYPTO=ON`
 - CI builds against Qt 6.9.3 on Linux/macOS/Windows — keep the
   `find_package(Qt6 6.8 ...)` floor compatible.
 

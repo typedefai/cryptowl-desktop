@@ -13,6 +13,7 @@ add_library(cryptowl_core STATIC
     crypto/Hash.cpp
     crypto/ProtectedValue.cpp
     crypto/Random.cpp
+    crypto/Trace.h
     vault/ItemRepository.h
     vault/ItemRepository.cpp
     vault/Schema.h
@@ -23,6 +24,14 @@ add_library(cryptowl_core STATIC
 )
 
 target_include_directories(cryptowl_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+target_compile_definitions(cryptowl_core PUBLIC
+    CRYPTOWL_TRACE_CRYPTO=$<BOOL:${CRYPTOWL_TRACE_CRYPTO}>
+)
+
+if(CRYPTOWL_TRACE_CRYPTO)
+    target_sources(cryptowl_core PRIVATE crypto/Trace.cpp)
+endif()
 
 target_link_libraries(cryptowl_core
     PRIVATE mbedcrypto

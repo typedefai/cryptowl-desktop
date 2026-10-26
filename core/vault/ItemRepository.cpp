@@ -204,7 +204,8 @@ bool loadDek(sqlite3 *db, const std::string &dekId,
 
     try {
         Bytes plaintext = cryptowl::crypto::aesGcmDecrypt(
-            kek, nonce, cryptowl::crypto::bytesOf(dekId), ciphertext, tag);
+            kek, nonce, cryptowl::crypto::bytesOf(dekId), ciphertext, tag,
+            "dek.unwrap.kek");
         if (plaintext.size() != 32) {
             cryptowl::crypto::secureWipe(plaintext);
             setError(error, "invalid unwrapped item key");
@@ -226,7 +227,7 @@ bool insertDek(sqlite3 *db, const std::string &dekId,
     GcmCiphertext wrapped;
     try {
         wrapped = cryptowl::crypto::aesGcmEncrypt(
-            kek, nonce, cryptowl::crypto::bytesOf(dekId), dek);
+            kek, nonce, cryptowl::crypto::bytesOf(dekId), dek, "dek.wrap.kek");
     } catch (const std::exception &) {
         setError(error, "could not wrap item key");
         return false;
@@ -267,7 +268,7 @@ bool encryptPayload(std::span<const std::uint8_t> dek, const std::string &dataId
     try {
         const GcmCiphertext ciphertext = cryptowl::crypto::aesGcmEncrypt(
             dek, nonce, cryptowl::crypto::bytesOf(dataId),
-            cryptowl::crypto::bytesOf(payload));
+            cryptowl::crypto::bytesOf(payload), "payload.encrypt.dek");
         encrypted->content = ciphertext.ciphertext;
         encrypted->tag = ciphertext.tag;
         encrypted->nonce = nonce;
@@ -560,7 +561,8 @@ bool ItemRepository::get(const std::string &id, ItemRecord *item,
 
         try {
             Bytes plaintext = cryptowl::crypto::aesGcmDecrypt(
-                dek.span(), nonce, cryptowl::crypto::bytesOf(dataId), content, tag);
+                dek.span(), nonce, cryptowl::crypto::bytesOf(dataId), content, tag,
+                "payload.decrypt.dek");
             record.payload.assign(reinterpret_cast<const char *>(plaintext.data()),
                                   plaintext.size());
             std::fill(plaintext.begin(), plaintext.end(), std::uint8_t{0});

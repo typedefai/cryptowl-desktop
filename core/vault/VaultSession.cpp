@@ -140,7 +140,8 @@ bool storeKek(VaultDatabase &database, std::span<const std::uint8_t> smk,
     GcmCiphertext wrapped;
     try {
         wrapped = cryptowl::crypto::aesGcmEncrypt(
-            wrappingKey, nonce, cryptowl::crypto::bytesOf(kKekId), kek->span());
+            wrappingKey, nonce, cryptowl::crypto::bytesOf(kKekId), kek->span(),
+            "kek.wrap.smk");
     } catch (const std::exception &) {
         setError(error, "could not wrap the vault key encryption key");
         return false;
@@ -247,7 +248,7 @@ bool loadOrCreateKek(VaultDatabase &database, std::span<const std::uint8_t> smk,
         try {
             Bytes plaintext = cryptowl::crypto::aesGcmDecrypt(
                 smk.first(32), nonce, cryptowl::crypto::bytesOf(kKekId), ciphertext,
-                tag);
+                tag, "kek.unwrap.smk");
             if (plaintext.size() != 32) {
                 cryptowl::crypto::secureWipe(plaintext);
                 setError(error, "invalid key encryption key");

@@ -12,6 +12,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(CTest)
 
+option(CRYPTOWL_TRACE_CRYPTO
+    "Log AES-GCM flow metadata (never key material or plaintext)"
+    OFF)
+
 find_package(Qt6 6.8 REQUIRED COMPONENTS Widgets)
 
 qt_standard_project_setup()

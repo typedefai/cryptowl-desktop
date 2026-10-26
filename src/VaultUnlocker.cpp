@@ -205,7 +205,8 @@ VaultUnlocker::Result VaultUnlocker::unlock(const QString &vaultPath,
 
         const auto wrappingKey = std::span<const std::uint8_t>(smk.span().data(), 32);
         Bytes vaultKeyBytes = aesGcmDecrypt(
-            wrappingKey, nonce, bytesOf(wrappedId.toStdString()), ciphertext, tag);
+            wrappingKey, nonce, bytesOf(wrappedId.toStdString()), ciphertext, tag,
+            "vault_key.unwrap.smk");
         if (vaultKeyBytes.size() != 32) {
             secureWipe(vaultKeyBytes);
             return failure(QStringLiteral("Invalid vault key length."));

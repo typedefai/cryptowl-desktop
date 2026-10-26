@@ -81,6 +81,23 @@ ctest --test-dir build/debug --output-on-failure
 Tests are Qt Test binaries driving the UI headlessly
 (`QT_QPA_PLATFORM=offscreen`, already set in the test properties).
 
+### Crypto flow tracing
+
+Compile-time tracing is **off by default**. Enable it in a separate build tree:
+
+```bash
+cmake -S . -B build/trace -G Ninja \
+  -DCMAKE_PREFIX_PATH="$HOME/Qt/6.12.0/macos" \
+  -DCRYPTOWL_TRACE_CRYPTO=ON
+cmake --build build/trace
+```
+
+The trace writes metadata for every AES-256-GCM operation to `stderr` on
+Unix-like systems and to the debugger via `OutputDebugString` on Windows:
+operation, flow label, AAD/input/output byte counts, and success/failure. It
+never logs keys, plaintext, ciphertext, nonces, tags, or AAD contents. Do not
+ship a trace-enabled build.
+
 ## Layout
 
 ```

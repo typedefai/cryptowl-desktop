@@ -153,8 +153,9 @@ VaultCreator::Result VaultCreator::create(const QString &vaultPath,
 
     const auto wrappingKey = std::span<const std::uint8_t>(smk.span().data(), 32);
     const auto macKey = std::span<const std::uint8_t>(smk.span().data() + 32, 32);
-    const GcmCiphertext wrapped =
-        aesGcmEncrypt(wrappingKey, nonce, bytesOf("vault_key:smk"), vaultKey.span());
+    const GcmCiphertext wrapped = aesGcmEncrypt(
+        wrappingKey, nonce, bytesOf("vault_key:smk"), vaultKey.span(),
+        "vault_key.wrap.smk");
 
     QJsonObject kdf;
     kdf[QStringLiteral("algorithm")] = QStringLiteral("argon2id");

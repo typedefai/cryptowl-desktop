@@ -1,6 +1,7 @@
 #include "crypto/AesGcm.h"
 
 #include "crypto/Errors.h"
+#include "crypto/Trace.h"
 
 #include <mbedtls/gcm.h>
 
@@ -59,26 +60,35 @@ int setKey(mbedtls_gcm_context *context, std::span<const std::uint8_t> key)
 GcmCiphertext aesGcmEncrypt(std::span<const std::uint8_t> key,
                             std::span<const std::uint8_t> nonce,
                             std::span<const std::uint8_t> aad,
-                            std::span<const std::uint8_t> plaintext)
+                            std::span<const std::uint8_t> plaintext,
+                            std::string_view context)
 {
     validateKeyAndNonce(key, nonce);
 
-    GcmContext context;
-    if (setKey(context.get(), key) != 0)
+    GcmContext gcm;
+    if (setKey(gcm.get(), key) != 0) {
+        CRYPTOWL_TRACE_CRYPTO_EVENT("encrypt", context, aad.size(),
+                                    plaintext.size(), 0, false);
         throw std::runtime_error("AES-GCM setkey failed");
+    }
 
     GcmCiphertext out;
     out.ciphertext.resize(plaintext.size());
     out.tag.resize(kTagLength);
 
-    const int rc = mbedtls_gcm_crypt_and_tag(context.get(), MBEDTLS_GCM_ENCRYPT,
-                                             plaintext.size(), nonce.data(), nonce.size(),
-                                             aad.data(), aad.size(), plaintext.data(),
-                                             out.ciphertext.data(), out.tag.size(),
-                                             out.tag.data());
-    if (rc != 0)
+    const int rc = mbedtls_gcm_crypt_and_tag(gcm.get(), MBEDTLS_GCM_ENCRYPT,
+                                             plaintext.size(), nonce.data(),
+                                             nonce.size(), aad.data(), aad.size(),
+                                             plaintext.data(), out.ciphertext.data(),
+                                             out.tag.size(), out.tag.data());
+    if (rc != 0) {
+        CRYPTOWL_TRACE_CRYPTO_EVENT("encrypt", context, aad.size(),
+                                    plaintext.size(), 0, false);
         throw std::runtime_error("AES-GCM encryption failed");
+    }
 
+    CRYPTOWL_TRACE_CRYPTO_EVENT("encrypt", context, aad.size(),
+                                plaintext.size(), out.ciphertext.size(), true);
     return out;
 }
 
@@ -86,30 +96,43 @@ Bytes aesGcmDecrypt(std::span<const std::uint8_t> key,
                     std::span<const std::uint8_t> nonce,
                     std::span<const std::uint8_t> aad,
                     std::span<const std::uint8_t> ciphertext,
-                    std::span<const std::uint8_t> tag)
+                    std::span<const std::uint8_t> tag,
+                    std::string_view context)
 {
     validateKeyAndNonce(key, nonce);
-    if (tag.size() != kTagLength)
+    if (tag.size() != kTagLength) {
+        CRYPTOWL_TRACE_CRYPTO_EVENT("decrypt", context, aad.size(),
+                                    ciphertext.size(), 0, false);
         throw std::invalid_argument("AES-256-GCM tag must be 16 bytes");
+    }
 
-    GcmContext context;
-    if (setKey(context.get(), key) != 0)
+    GcmContext gcm;
+    if (setKey(gcm.get(), key) != 0) {
+        CRYPTOWL_TRACE_CRYPTO_EVENT("decrypt", context, aad.size(),
+                                    ciphertext.size(), 0, false);
         throw std::runtime_error("AES-GCM setkey failed");
+    }
 
     Bytes plaintext(ciphertext.size());
     const int rc = mbedtls_gcm_auth_decrypt(
-        context.get(), ciphertext.size(), nonce.data(), nonce.size(), aad.data(),
+        gcm.get(), ciphertext.size(), nonce.data(), nonce.size(), aad.data(),
         aad.size(), tag.data(), tag.size(), ciphertext.data(), plaintext.data());
 
     if (rc == MBEDTLS_ERR_GCM_AUTH_FAILED) {
         secureWipe(plaintext);
+        CRYPTOWL_TRACE_CRYPTO_EVENT("decrypt", context, aad.size(),
+                                    ciphertext.size(), 0, false);
         throw AuthenticationError();
     }
     if (rc != 0) {
         secureWipe(plaintext);
+        CRYPTOWL_TRACE_CRYPTO_EVENT("decrypt", context, aad.size(),
+                                    ciphertext.size(), 0, false);
         throw std::runtime_error("AES-GCM decryption failed");
     }
 
+    CRYPTOWL_TRACE_CRYPTO_EVENT("decrypt", context, aad.size(), ciphertext.size(),
+                                plaintext.size(), true);
     return plaintext;
 }
 
