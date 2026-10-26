@@ -4,8 +4,6 @@
 
 #include <algorithm>
 #include <cstdio>
-#include <cstdlib>
-#include <cstring>
 #include <string>
 
 #if defined(_WIN32)
@@ -28,15 +26,6 @@ void writeLine(std::string_view line)
 }
 
 #if defined(CRYPTOWL_TRACE_SECRETS) && CRYPTOWL_TRACE_SECRETS
-
-bool secretTraceEnabled()
-{
-    static const bool enabled = [] {
-        const char *value = std::getenv("CRYPTOWL_INSECURE_SECRETS");
-        return value && std::strcmp(value, "1") == 0;
-    }();
-    return enabled;
-}
 
 std::string escapedText(std::string_view text, std::size_t maxBytes,
                         bool *truncated)
@@ -107,9 +96,6 @@ void traceCrypto(std::string_view operation, std::string_view context,
 void traceSecret(std::string_view label, std::span<const std::uint8_t> bytes,
                  std::size_t maxBytes)
 {
-    if (!secretTraceEnabled())
-        return;
-
     const std::size_t count = std::min(bytes.size(), maxBytes);
     std::string line = "[cryptowl:secret] label=";
     line.append(label);
@@ -125,9 +111,6 @@ void traceSecret(std::string_view label, std::span<const std::uint8_t> bytes,
 void traceSecretText(std::string_view label, std::string_view text,
                      std::size_t maxBytes)
 {
-    if (!secretTraceEnabled())
-        return;
-
     bool truncated = false;
     const std::string escaped = escapedText(text, maxBytes, &truncated);
 
@@ -150,9 +133,6 @@ void traceAeadSecrets(std::string_view operation, std::string_view context,
                       std::span<const std::uint8_t> output,
                       std::span<const std::uint8_t> tag, bool)
 {
-    if (!secretTraceEnabled())
-        return;
-
     const std::string prefix = std::string(context) + ".";
     const bool encrypt = operation == "encrypt";
 
@@ -167,9 +147,6 @@ void traceAeadSecrets(std::string_view operation, std::string_view context,
 void traceSqlCipher(std::string_view databasePath,
                     std::span<const std::uint8_t> rawKey)
 {
-    if (!secretTraceEnabled())
-        return;
-
     traceSecret("sqlcipher.raw_key", rawKey);
 
     std::string command = "sqlcipher \"";

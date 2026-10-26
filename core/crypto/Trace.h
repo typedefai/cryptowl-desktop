@@ -30,9 +30,8 @@ void traceCrypto(std::string_view operation, std::string_view context,
 
 namespace cryptowl::crypto {
 
-// Insecure diagnostic dump. Only call from an explicitly enabled
-// cross-verification build. Output is additionally gated at runtime by
-// CRYPTOWL_INSECURE_SECRETS=1.
+// Insecure diagnostic dump. Only compiled into an explicitly enabled
+// CRYPTOWL_TRACE_SECRETS cross-verification build; never ship that build.
 void traceSecret(std::string_view label, std::span<const std::uint8_t> bytes,
                  std::size_t maxBytes = 4096);
 void traceSecretText(std::string_view label, std::string_view text,

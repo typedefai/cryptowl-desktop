@@ -25,6 +25,16 @@ if(CRYPTOWL_TRACE_SECRETS AND NOT CRYPTOWL_TRACE_CRYPTO)
         "CRYPTOWL_TRACE_SECRETS requires CRYPTOWL_TRACE_CRYPTO=ON")
 endif()
 
+if(CRYPTOWL_TRACE_SECRETS)
+    message(WARNING
+        "CRYPTOWL_TRACE_SECRETS is enabled: raw keys and plaintext WILL be "
+        "logged. Never ship this build or use it with a real vault.")
+elseif(CRYPTOWL_TRACE_CRYPTO)
+    message(STATUS
+        "Crypto metadata trace enabled; add -DCRYPTOWL_TRACE_SECRETS=ON to "
+        "include raw key/data output.")
+endif()
+
 find_package(Qt6 6.8 REQUIRED COMPONENTS Widgets)
 
 qt_standard_project_setup()

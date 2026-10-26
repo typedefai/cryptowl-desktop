@@ -15,8 +15,8 @@ self-contained.
 - Crypto trace (off by default; never ship enabled):
   `cmake -S . -B build/trace -DCRYPTOWL_TRACE_CRYPTO=ON`
 - Insecure key/data dump for cross-verification only:
-  `-DCRYPTOWL_TRACE_SECRETS=ON` plus runtime
-  `CRYPTOWL_INSECURE_SECRETS=1`; never use it with real vaults or commit logs
+  `-DCRYPTOWL_TRACE_CRYPTO=ON -DCRYPTOWL_TRACE_SECRETS=ON`; never use it with
+  real vaults or commit logs
 - CI builds against Qt 6.9.3 on Linux/macOS/Windows — keep the
   `find_package(Qt6 6.8 ...)` floor compatible.
 
@@ -68,8 +68,8 @@ deliberately).
   digest). Commit messages are not part of the fingerprint.
 - Secrets policy: keys never logged, never in exception messages, derived on
   demand, zeroized after use (no `QString` key material if avoidable). Sole
-  exception: the explicit `CRYPTOWL_TRACE_SECRETS` + runtime
-  `CRYPTOWL_INSECURE_SECRETS=1` cross-verification build; never ship it.
+  exception: the explicit `CRYPTOWL_TRACE_SECRETS` cross-verification build;
+  never ship it.
 
 ## Conventions
 

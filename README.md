@@ -102,7 +102,7 @@ ship a trace-enabled build.
 
 For Android cross-verification, a **second, deliberately insecure** option logs
 raw key material, plaintext, ciphertext, nonces, tags, AAD, SQLCipher raw key,
-and a CLI command. It requires both compile-time opt-ins and a runtime opt-in:
+and a CLI command. It requires both compile-time opt-ins:
 
 ```bash
 cmake -S . -B build/secrets -G Ninja \
@@ -111,7 +111,7 @@ cmake -S . -B build/secrets -G Ninja \
   -DCRYPTOWL_TRACE_SECRETS=ON
 cmake --build build/secrets
 
-CRYPTOWL_INSECURE_SECRETS=1 build/secrets/src/cryptowl-desktop 2>crypto.log
+build/secrets/src/cryptowl-desktop 2>crypto.log
 ```
 
 The secret dump includes device secret, `P`, TMK, SMK, VaultKey, KEK, DEKs,
