@@ -16,6 +16,15 @@ option(CRYPTOWL_TRACE_CRYPTO
     "Log AES-GCM flow metadata (never key material or plaintext)"
     OFF)
 
+option(CRYPTOWL_TRACE_SECRETS
+    "INSECURE: log raw keys and plaintext (requires trace; never ship)"
+    OFF)
+
+if(CRYPTOWL_TRACE_SECRETS AND NOT CRYPTOWL_TRACE_CRYPTO)
+    message(FATAL_ERROR
+        "CRYPTOWL_TRACE_SECRETS requires CRYPTOWL_TRACE_CRYPTO=ON")
+endif()
+
 find_package(Qt6 6.8 REQUIRED COMPONENTS Widgets)
 
 qt_standard_project_setup()

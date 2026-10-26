@@ -3,6 +3,7 @@
 #include "crypto/AesGcm.h"
 #include "crypto/Bytes.h"
 #include "crypto/Random.h"
+#include "crypto/Trace.h"
 #include "vault/ItemRepository.h"
 
 #include <sqlite3.h>
@@ -291,6 +292,9 @@ std::unique_ptr<VaultSession> VaultSession::open(const std::string &databasePath
     ProtectedValue kek;
     if (!loadOrCreateKek(session->m_database, smk.span(), &kek, error))
         return nullptr;
+
+    CRYPTOWL_TRACE_SECRET("key.kek", kek.span());
+    CRYPTOWL_TRACE_SECRET("key.vault_key", vaultKey.span());
 
     session->m_vaultKey = std::move(vaultKey);
     session->m_kek = std::move(kek);

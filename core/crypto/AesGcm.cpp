@@ -69,6 +69,10 @@ GcmCiphertext aesGcmEncrypt(std::span<const std::uint8_t> key,
     if (setKey(gcm.get(), key) != 0) {
         CRYPTOWL_TRACE_CRYPTO_EVENT("encrypt", context, aad.size(),
                                     plaintext.size(), 0, false);
+        CRYPTOWL_TRACE_AEAD_SECRETS(
+            "encrypt", context, key, nonce, aad, plaintext,
+            std::span<const std::uint8_t>(), std::span<const std::uint8_t>(),
+            false);
         throw std::runtime_error("AES-GCM setkey failed");
     }
 
@@ -84,11 +88,17 @@ GcmCiphertext aesGcmEncrypt(std::span<const std::uint8_t> key,
     if (rc != 0) {
         CRYPTOWL_TRACE_CRYPTO_EVENT("encrypt", context, aad.size(),
                                     plaintext.size(), 0, false);
+        CRYPTOWL_TRACE_AEAD_SECRETS(
+            "encrypt", context, key, nonce, aad, plaintext,
+            std::span<const std::uint8_t>(), std::span<const std::uint8_t>(),
+            false);
         throw std::runtime_error("AES-GCM encryption failed");
     }
 
     CRYPTOWL_TRACE_CRYPTO_EVENT("encrypt", context, aad.size(),
                                 plaintext.size(), out.ciphertext.size(), true);
+    CRYPTOWL_TRACE_AEAD_SECRETS("encrypt", context, key, nonce, aad, plaintext,
+                                out.ciphertext, out.tag, true);
     return out;
 }
 
@@ -103,6 +113,9 @@ Bytes aesGcmDecrypt(std::span<const std::uint8_t> key,
     if (tag.size() != kTagLength) {
         CRYPTOWL_TRACE_CRYPTO_EVENT("decrypt", context, aad.size(),
                                     ciphertext.size(), 0, false);
+        CRYPTOWL_TRACE_AEAD_SECRETS(
+            "decrypt", context, key, nonce, aad, ciphertext,
+            std::span<const std::uint8_t>(), tag, false);
         throw std::invalid_argument("AES-256-GCM tag must be 16 bytes");
     }
 
@@ -110,6 +123,9 @@ Bytes aesGcmDecrypt(std::span<const std::uint8_t> key,
     if (setKey(gcm.get(), key) != 0) {
         CRYPTOWL_TRACE_CRYPTO_EVENT("decrypt", context, aad.size(),
                                     ciphertext.size(), 0, false);
+        CRYPTOWL_TRACE_AEAD_SECRETS(
+            "decrypt", context, key, nonce, aad, ciphertext,
+            std::span<const std::uint8_t>(), tag, false);
         throw std::runtime_error("AES-GCM setkey failed");
     }
 
@@ -122,17 +138,25 @@ Bytes aesGcmDecrypt(std::span<const std::uint8_t> key,
         secureWipe(plaintext);
         CRYPTOWL_TRACE_CRYPTO_EVENT("decrypt", context, aad.size(),
                                     ciphertext.size(), 0, false);
+        CRYPTOWL_TRACE_AEAD_SECRETS(
+            "decrypt", context, key, nonce, aad, ciphertext,
+            std::span<const std::uint8_t>(), tag, false);
         throw AuthenticationError();
     }
     if (rc != 0) {
         secureWipe(plaintext);
         CRYPTOWL_TRACE_CRYPTO_EVENT("decrypt", context, aad.size(),
                                     ciphertext.size(), 0, false);
+        CRYPTOWL_TRACE_AEAD_SECRETS(
+            "decrypt", context, key, nonce, aad, ciphertext,
+            std::span<const std::uint8_t>(), tag, false);
         throw std::runtime_error("AES-GCM decryption failed");
     }
 
     CRYPTOWL_TRACE_CRYPTO_EVENT("decrypt", context, aad.size(), ciphertext.size(),
                                 plaintext.size(), true);
+    CRYPTOWL_TRACE_AEAD_SECRETS("decrypt", context, key, nonce, aad, ciphertext,
+                                plaintext, tag, true);
     return plaintext;
 }
 

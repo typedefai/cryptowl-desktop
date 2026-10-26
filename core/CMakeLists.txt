@@ -27,9 +27,10 @@ target_include_directories(cryptowl_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 target_compile_definitions(cryptowl_core PUBLIC
     CRYPTOWL_TRACE_CRYPTO=$<BOOL:${CRYPTOWL_TRACE_CRYPTO}>
+    CRYPTOWL_TRACE_SECRETS=$<BOOL:${CRYPTOWL_TRACE_SECRETS}>
 )
 
-if(CRYPTOWL_TRACE_CRYPTO)
+if(CRYPTOWL_TRACE_CRYPTO OR CRYPTOWL_TRACE_SECRETS)
     target_sources(cryptowl_core PRIVATE crypto/Trace.cpp)
 endif()
 

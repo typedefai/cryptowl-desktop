@@ -8,6 +8,7 @@
 #include "crypto/Crockford32.h"
 #include "crypto/Hash.h"
 #include "crypto/Random.h"
+#include "crypto/Trace.h"
 #include "vault/VaultDatabase.h"
 
 #include <QByteArray>
@@ -151,6 +152,22 @@ VaultCreator::Result VaultCreator::create(const QString &vaultPath,
     if (smk.size() != 64)
         return failure(QStringLiteral("Could not derive the vault key."));
 
+    CRYPTOWL_TRACE_SECRET_TEXT(
+        "kdf.params",
+        QStringLiteral("vault_id=%1 kdf=argon2id m=%2 t=%3 p=%4")
+            .arg(vaultId)
+            .arg(params.memoryKib)
+            .arg(params.iterations)
+            .arg(params.parallelism)
+            .toStdString());
+    CRYPTOWL_TRACE_SECRET("kdf.argon2_salt", argon2Salt);
+    CRYPTOWL_TRACE_SECRET("kdf.hkdf_salt", hkdfSalt);
+    CRYPTOWL_TRACE_SECRET("kdf.device_secret", deviceSecret.span());
+    CRYPTOWL_TRACE_SECRET("kdf.p", passwordKey.span());
+    CRYPTOWL_TRACE_SECRET("kdf.tmk", tmk.span());
+    CRYPTOWL_TRACE_SECRET("kdf.smk", smk.span());
+    CRYPTOWL_TRACE_SECRET("kdf.vault_key", vaultKey.span());
+
     const auto wrappingKey = std::span<const std::uint8_t>(smk.span().data(), 32);
     const auto macKey = std::span<const std::uint8_t>(smk.span().data() + 32, 32);
     const GcmCiphertext wrapped = aesGcmEncrypt(
@@ -252,6 +269,8 @@ VaultCreator::Result VaultCreator::create(const QString &vaultPath,
         return failAndCleanup(QStringLiteral("Could not create vault.db: %1")
                                   .arg(QString::fromStdString(databaseError)));
     }
+
+    CRYPTOWL_TRACE_SQLCIPHER(databasePath.toUtf8().toStdString(), vaultKey.span());
 
 #ifndef Q_OS_WIN
     if (!QFile::setPermissions(databasePath,

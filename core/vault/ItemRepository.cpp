@@ -5,6 +5,7 @@
 #include "crypto/Crockford32.h"
 #include "crypto/Hash.h"
 #include "crypto/Random.h"
+#include "crypto/Trace.h"
 #include "vault/VaultDatabase.h"
 
 #include <sqlite3.h>
@@ -543,6 +544,8 @@ bool ItemRepository::get(const std::string &id, ItemRecord *item,
 
     if (record.classification == "C") {
         record.payload = columnText(statement.get(), 8);
+        CRYPTOWL_TRACE_SECRET_TEXT(
+            "item.read.data", "id=" + record.id + " data_id=- dek_id=-");
     } else if (record.classification == "S") {
         const std::string dataId = columnText(statement.get(), 9);
         const std::string dekId = columnText(statement.get(), 10);
@@ -555,9 +558,14 @@ bool ItemRepository::get(const std::string &id, ItemRecord *item,
             return false;
         }
 
+        CRYPTOWL_TRACE_SECRET_TEXT(
+            "item.read.data",
+            "id=" + record.id + " data_id=" + dataId + " dek_id=" + dekId);
+
         ProtectedValue dek;
         if (!loadDek(m_database.handle(), dekId, m_kek, &dek, error))
             return false;
+        CRYPTOWL_TRACE_SECRET("item.dek", dek.span());
 
         try {
             Bytes plaintext = cryptowl::crypto::aesGcmDecrypt(
@@ -574,6 +582,14 @@ bool ItemRepository::get(const std::string &id, ItemRecord *item,
         setError(error, "unsupported item classification");
         return false;
     }
+
+    CRYPTOWL_TRACE_SECRET_TEXT(
+        "item.read",
+        "id=" + record.id + " type=" + record.type + " classification="
+            + record.classification + " title=" + record.title);
+    CRYPTOWL_TRACE_SECRET_TEXT("item.payload", record.payload);
+    CRYPTOWL_TRACE_SECRET("item.payload.hex",
+                          cryptowl::crypto::bytesOf(record.payload));
 
     *item = std::move(record);
     return true;
@@ -616,12 +632,28 @@ bool ItemRepository::create(const NewItem &item, std::string *id,
     ProtectedValue dek;
     EncryptedData encrypted;
 
+    CRYPTOWL_TRACE_SECRET_TEXT(
+        "item.create",
+        "id=" + itemId + " type=" + item.type + " classification="
+            + item.classification + " title=" + item.title);
+    CRYPTOWL_TRACE_SECRET_TEXT("item.payload", item.payload);
+
     if (secret) {
         dekId = uuidV4();
         dataId = uuidV4();
         dek = ProtectedValue(cryptowl::crypto::randomBytes(32));
         if (!encryptPayload(dek.span(), dataId, item.payload, &encrypted, error))
             return false;
+    }
+
+    CRYPTOWL_TRACE_SECRET_TEXT(
+        "item.create.data",
+        "id=" + itemId + " data_id=" + dataId + " dek_id=" + dekId);
+    if (secret) {
+        CRYPTOWL_TRACE_SECRET("item.dek", dek.span());
+    } else {
+        CRYPTOWL_TRACE_SECRET("item.payload.hex",
+                              cryptowl::crypto::bytesOf(item.payload));
     }
 
     const std::int64_t timestamp = nowMillis();
@@ -737,6 +769,12 @@ bool ItemRepository::update(const std::string &id, const ItemUpdate &item,
         return false;
     }
 
+    CRYPTOWL_TRACE_SECRET_TEXT(
+        "item.update",
+        "id=" + id + " classification=" + desiredClassification + " title="
+            + item.title);
+    CRYPTOWL_TRACE_SECRET_TEXT("item.payload", item.payload);
+
     const std::string newFingerprint =
         fingerprint(m_hfk, item.title, desiredClassification, item.payload);
     int seq = 0;
@@ -786,6 +824,16 @@ bool ItemRepository::update(const std::string &id, const ItemUpdate &item,
         }
     } else {
         content = item.payload;
+    }
+
+    CRYPTOWL_TRACE_SECRET_TEXT(
+        "item.update.data",
+        "id=" + id + " data_id=" + dataId + " dek_id=" + dekId);
+    if (desiredSecret) {
+        CRYPTOWL_TRACE_SECRET("item.dek", dek.span());
+    } else {
+        CRYPTOWL_TRACE_SECRET("item.payload.hex",
+                              cryptowl::crypto::bytesOf(content));
     }
 
     static constexpr const char *kUpdateSql =

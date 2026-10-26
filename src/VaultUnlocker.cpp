@@ -8,6 +8,7 @@
 #include "crypto/Crockford32.h"
 #include "crypto/Errors.h"
 #include "crypto/Hash.h"
+#include "crypto/Trace.h"
 #include "vault/VaultDatabase.h"
 
 #include <QByteArray>
@@ -222,6 +223,23 @@ VaultUnlocker::Result VaultUnlocker::unlock(const QString &vaultPath,
                                    .arg(QString::fromStdString(databaseError)));
             }
         }
+
+        CRYPTOWL_TRACE_SECRET_TEXT(
+            "kdf.params",
+            QStringLiteral("vault_id=%1 kdf=argon2id m=%2 t=%3 p=%4")
+                .arg(vaultId)
+                .arg(memoryKib)
+                .arg(iterations)
+                .arg(parallelism)
+                .toStdString());
+        CRYPTOWL_TRACE_SECRET("kdf.argon2_salt", argon2Salt);
+        CRYPTOWL_TRACE_SECRET("kdf.hkdf_salt", hkdfSalt);
+        CRYPTOWL_TRACE_SECRET("kdf.device_secret", deviceSecret.span());
+        CRYPTOWL_TRACE_SECRET("kdf.p", passwordKey.span());
+        CRYPTOWL_TRACE_SECRET("kdf.tmk", tmk.span());
+        CRYPTOWL_TRACE_SECRET("kdf.smk", smk.span());
+        CRYPTOWL_TRACE_SECRET("kdf.vault_key", vaultKeyBytes);
+        CRYPTOWL_TRACE_SQLCIPHER(databasePath.toUtf8().toStdString(), vaultKeyBytes);
 
         Result result;
         result.ok = true;
