@@ -13,26 +13,13 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 include(CTest)
 
 option(CRYPTOWL_TRACE_CRYPTO
-    "Log AES-GCM flow metadata (never key material or plaintext)"
+    "INSECURE: log all crypto flows including raw keys and plaintext (never ship)"
     OFF)
 
-option(CRYPTOWL_TRACE_SECRETS
-    "INSECURE: log raw keys and plaintext (requires trace; never ship)"
-    OFF)
-
-if(CRYPTOWL_TRACE_SECRETS AND NOT CRYPTOWL_TRACE_CRYPTO)
-    message(FATAL_ERROR
-        "CRYPTOWL_TRACE_SECRETS requires CRYPTOWL_TRACE_CRYPTO=ON")
-endif()
-
-if(CRYPTOWL_TRACE_SECRETS)
+if(CRYPTOWL_TRACE_CRYPTO)
     message(WARNING
-        "CRYPTOWL_TRACE_SECRETS is enabled: raw keys and plaintext WILL be "
+        "CRYPTOWL_TRACE_CRYPTO is enabled: raw keys and plaintext WILL be "
         "logged. Never ship this build or use it with a real vault.")
-elseif(CRYPTOWL_TRACE_CRYPTO)
-    message(STATUS
-        "Crypto metadata trace enabled; add -DCRYPTOWL_TRACE_SECRETS=ON to "
-        "include raw key/data output.")
 endif()
 
 find_package(Qt6 6.8 REQUIRED COMPONENTS Widgets)

@@ -81,43 +81,33 @@ ctest --test-dir build/debug --output-on-failure
 Tests are Qt Test binaries driving the UI headlessly
 (`QT_QPA_PLATFORM=offscreen`, already set in the test properties).
 
-### Crypto flow tracing
+### Insecure crypto tracing
 
-Compile-time tracing is **off by default**. Enable it in a separate build tree:
+Compile-time tracing is **off by default** and is deliberately insecure when
+enabled. One flag turns on all flow metadata, raw keys, and plaintext:
 
 ```bash
 cmake -S . -B build/trace -G Ninja \
   -DCMAKE_PREFIX_PATH="$HOME/Qt/6.12.0/macos" \
   -DCRYPTOWL_TRACE_CRYPTO=ON
 cmake --build build/trace
+
+build/trace/src/cryptowl-desktop 2>crypto.log
 ```
 
-The trace writes metadata for every AES-256-GCM operation to `stderr` on
-Unix-like systems and to the debugger via `OutputDebugString` on Windows:
-operation, flow label, AAD/input/output byte counts, and success/failure. It
-never logs keys, plaintext, ciphertext, nonces, tags, or AAD contents. Do not
-ship a trace-enabled build.
+The trace includes:
 
-#### Insecure cross-verification dump
+- Vault key derivation inputs and outputs: salts, device secret, `P`, TMK,
+  SMK, VaultKey, KEK, and per-item DEKs
+- Every AES-256-GCM operation with key, nonce, AAD, plaintext, ciphertext,
+  tag, and status
+- Item IDs, data IDs, DEK IDs, type, classification, and payload text/hex
+- SQLCipher raw key and an example CLI command
 
-For Android cross-verification, a **second, deliberately insecure** option logs
-raw key material, plaintext, ciphertext, nonces, tags, AAD, SQLCipher raw key,
-and a CLI command. It requires both compile-time opt-ins:
-
-```bash
-cmake -S . -B build/secrets -G Ninja \
-  -DCMAKE_PREFIX_PATH="$HOME/Qt/6.12.0/macos" \
-  -DCRYPTOWL_TRACE_CRYPTO=ON \
-  -DCRYPTOWL_TRACE_SECRETS=ON
-cmake --build build/secrets
-
-build/secrets/src/cryptowl-desktop 2>crypto.log
-```
-
-The secret dump includes device secret, `P`, TMK, SMK, VaultKey, KEK, DEKs,
-item payloads, salts, IDs, and the SQLCipher command. The master password is
-never logged. Treat `crypto.log` as a secret, never use this mode with a real
-vault, and never ship or commit it.
+Raw lines carry `secret=1` under the same `[cryptowl:crypto]` prefix. Large
+payload fields are truncated. The master password is never logged. Treat
+`crypto.log` as a secret, never use this mode with a real vault, and never ship
+or commit a trace-enabled build or its logs.
 
 ## Layout
 

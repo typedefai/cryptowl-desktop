@@ -25,8 +25,6 @@ void writeLine(std::string_view line)
 #endif
 }
 
-#if defined(CRYPTOWL_TRACE_SECRETS) && CRYPTOWL_TRACE_SECRETS
-
 std::string escapedText(std::string_view text, std::size_t maxBytes,
                         bool *truncated)
 {
@@ -68,8 +66,6 @@ std::string escapedText(std::string_view text, std::size_t maxBytes,
     return escaped;
 }
 
-#endif
-
 } // namespace
 
 void traceCrypto(std::string_view operation, std::string_view context,
@@ -91,13 +87,11 @@ void traceCrypto(std::string_view operation, std::string_view context,
         writeLine(line);
 }
 
-#if defined(CRYPTOWL_TRACE_SECRETS) && CRYPTOWL_TRACE_SECRETS
-
 void traceSecret(std::string_view label, std::span<const std::uint8_t> bytes,
                  std::size_t maxBytes)
 {
     const std::size_t count = std::min(bytes.size(), maxBytes);
-    std::string line = "[cryptowl:secret] label=";
+    std::string line = "[cryptowl:crypto] secret=1 label=";
     line.append(label);
     line += " bytes=" + std::to_string(bytes.size());
     line += " hex=";
@@ -114,7 +108,7 @@ void traceSecretText(std::string_view label, std::string_view text,
     bool truncated = false;
     const std::string escaped = escapedText(text, maxBytes, &truncated);
 
-    std::string line = "[cryptowl:secret] label=";
+    std::string line = "[cryptowl:crypto] secret=1 label=";
     line.append(label);
     line += " bytes=" + std::to_string(text.size());
     line += " text=\"";
@@ -156,7 +150,5 @@ void traceSqlCipher(std::string_view databasePath,
     command += "'\";\n.tables\n";
     traceSecretText("sqlcipher.open", command, 8192);
 }
-
-#endif
 
 } // namespace cryptowl::crypto

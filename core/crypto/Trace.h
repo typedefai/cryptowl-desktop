@@ -9,29 +9,11 @@
 
 namespace cryptowl::crypto {
 
-// Metadata-only trace for AEAD operations. Never pass key material,
-// plaintext, ciphertext, nonces, tags, or AAD contents here.
+// Full insecure trace. Only compiled into an explicit CRYPTOWL_TRACE_CRYPTO
+// cross-verification build; never ship that build.
 void traceCrypto(std::string_view operation, std::string_view context,
                  std::size_t aadBytes, std::size_t inputBytes,
                  std::size_t outputBytes, bool success);
-
-} // namespace cryptowl::crypto
-
-#define CRYPTOWL_TRACE_CRYPTO_EVENT(...) \
-    ::cryptowl::crypto::traceCrypto(__VA_ARGS__)
-
-#else
-
-#define CRYPTOWL_TRACE_CRYPTO_EVENT(...) ((void)0)
-
-#endif
-
-#if defined(CRYPTOWL_TRACE_SECRETS) && CRYPTOWL_TRACE_SECRETS
-
-namespace cryptowl::crypto {
-
-// Insecure diagnostic dump. Only compiled into an explicitly enabled
-// CRYPTOWL_TRACE_SECRETS cross-verification build; never ship that build.
 void traceSecret(std::string_view label, std::span<const std::uint8_t> bytes,
                  std::size_t maxBytes = 4096);
 void traceSecretText(std::string_view label, std::string_view text,
@@ -48,6 +30,8 @@ void traceSqlCipher(std::string_view databasePath,
 
 } // namespace cryptowl::crypto
 
+#define CRYPTOWL_TRACE_CRYPTO_EVENT(...) \
+    ::cryptowl::crypto::traceCrypto(__VA_ARGS__)
 #define CRYPTOWL_TRACE_SECRET(...) \
     ::cryptowl::crypto::traceSecret(__VA_ARGS__)
 #define CRYPTOWL_TRACE_SECRET_TEXT(...) \
@@ -59,6 +43,7 @@ void traceSqlCipher(std::string_view databasePath,
 
 #else
 
+#define CRYPTOWL_TRACE_CRYPTO_EVENT(...) ((void)0)
 #define CRYPTOWL_TRACE_SECRET(...) ((void)0)
 #define CRYPTOWL_TRACE_SECRET_TEXT(...) ((void)0)
 #define CRYPTOWL_TRACE_AEAD_SECRETS(...) ((void)0)

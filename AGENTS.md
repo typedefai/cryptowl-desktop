@@ -12,10 +12,8 @@ self-contained.
 - Build: `cmake --build build/debug`
 - Test (headless): `ctest --test-dir build/debug --output-on-failure`
   (`QT_QPA_PLATFORM=offscreen` is already set per test)
-- Crypto trace (off by default; never ship enabled):
-  `cmake -S . -B build/trace -DCRYPTOWL_TRACE_CRYPTO=ON`
-- Insecure key/data dump for cross-verification only:
-  `-DCRYPTOWL_TRACE_CRYPTO=ON -DCRYPTOWL_TRACE_SECRETS=ON`; never use it with
+- Insecure crypto trace (off by default; logs raw keys/plaintext; never ship):
+  `cmake -S . -B build/trace -DCRYPTOWL_TRACE_CRYPTO=ON`; never use it with
   real vaults or commit logs
 - CI builds against Qt 6.9.3 on Linux/macOS/Windows — keep the
   `find_package(Qt6 6.8 ...)` floor compatible.
@@ -68,8 +66,8 @@ deliberately).
   digest). Commit messages are not part of the fingerprint.
 - Secrets policy: keys never logged, never in exception messages, derived on
   demand, zeroized after use (no `QString` key material if avoidable). Sole
-  exception: the explicit `CRYPTOWL_TRACE_SECRETS` cross-verification build;
-  never ship it.
+  exception: the explicit `CRYPTOWL_TRACE_CRYPTO` insecure trace build; never
+  ship it.
 
 ## Conventions
 
