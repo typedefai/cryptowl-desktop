@@ -104,10 +104,33 @@ The trace includes:
 - Item IDs, data IDs, DEK IDs, type, classification, and payload text/hex
 - SQLCipher raw key and an example CLI command
 
-Raw lines carry `secret=1` under the same `[cryptowl:crypto]` prefix. Large
-payload fields are truncated. The master password is never logged. Treat
-`crypto.log` as a secret, never use this mode with a real vault, and never ship
-or commit a trace-enabled build or its logs.
+Each AEAD operation is printed as one block, with inputs and outputs aligned
+under the operation and hex grouped into 4-byte words:
+
+```text
+[cryptowl:crypto] +- AES-256-GCM decrypt  kek.unwrap.smk
+[cryptowl:crypto] |  key             32 B  00112233 44556677 8899aabb ccddeeff
+[cryptowl:crypto] |                        00112233 44556677 8899aabb ccddeeff
+[cryptowl:crypto] |  nonce           12 B  00010203 04050607 08090a0b
+[cryptowl:crypto] |  aad              7 B  "kek:smk"
+[cryptowl:crypto] |  ciphertext      32 B  ffeeddcc bbaa9988 77665544 33221100
+[cryptowl:crypto] |                        ffeeddcc bbaa9988 77665544 33221100
+[cryptowl:crypto] |  plaintext       32 B  aabbccdd eeff0011 22334455 66778899
+[cryptowl:crypto] |                        aabbccdd eeff0011 22334455 66778899
+[cryptowl:crypto] |  tag             16 B  10203040 50607080 90a0b0c0 d0e0f000
+[cryptowl:crypto] +- ok
+```
+
+Lines are colored when stderr is a terminal. `CRYPTOWL_TRACE_COLOR=always`
+forces color (useful in an IDE terminal) and `CRYPTOWL_TRACE_COLOR=never`
+disables it; `NO_COLOR` and `TERM=dumb` are also honored. Color is off by
+default when redirected to a file, so `2>crypto.log` stays escape-free.
+
+Raw secret lines carry `secret=1` under the same `[cryptowl:crypto]` prefix.
+SQLCipher command lines are printed unprefixed so the command can be copied
+as-is. Large payload fields are truncated. The master password is never
+logged. Treat `crypto.log` as a secret, never use this mode with a real vault,
+and never ship or commit a trace-enabled build or its logs.
 
 ## Layout
 
