@@ -103,14 +103,18 @@ kept from the v1 core.
 
 ## Payload routing (tier security is preserved)
 
-- **C tier** (`note`, `env`, C-tier `photo`): payload in `t_item.content`
-  (plaintext inside SQLCipher) — fast, no per-item crypto.
-- **S/T tier** (`password`, …): payload is a per-item DEK row in
-  `t_encrypted_data` referenced by `encrypted_data_id`; the DEK is wrapped by
-  the KEK. On Android the KEK is BioKey-wrapped (per-access prompt); on the
+- **C tier** (`plain` notes by default, `env`, C-tier `photo`): payload in
+  `t_item.content` (plaintext inside SQLCipher) — fast, no per-item crypto.
+- **S/T tier** (`password`, an S-tier note, …): payload is a per-item DEK row
+  in `t_encrypted_data` referenced by `encrypted_data_id`; the DEK is wrapped
+  by the KEK. On Android the KEK is BioKey-wrapped (per-access prompt); on the
   devkit a **dev binding** wraps the KEK with the SMK (`t_wrapped_key`
   role=`kek`, wrapper=`smk`) — documented dev-only convenience, since desktops
   have no fingerprint gate.
+- Notes default to **C — Confidential** and may be escalated to
+  **S — Secret**. An S note keeps `t_item.content` empty and stores its text
+  in the encrypted-data payload; switching levels rewrites the item and adds
+  a version row.
 - **T tier** additionally wraps the TopSecretKEK with the TS-KEK =
   `Argon2id(secondary password, secondarySalt)`; `secondarySalt` lives in
   `vault.meta.salts` (the meta MAC is re-signed on setup). No secondary
@@ -184,7 +188,7 @@ Planned plugin set (built-in types):
 
 | type | tier | payload | files | diff | notes |
 | --- | --- | --- | --- | --- | --- |
-| `plain` | C | pure text | – | text | **default**; anything textual — `.env.prod`, config snippets, notes |
+| `plain` | C (S optional) | text; C in `content`, S encrypted | – | text | **default**; anything textual — `.env.prod`, config snippets, notes |
 | `password` | S | encrypted JSON (username/url/secret/notes) | – | field-level (later) | devkit dev binding: KEK wrapped by SMK |
 | `photo` | C (T later) | – | 1 embedded + thumbnail | binary (thumbnails) | always embedded (small) |
 | `video` | C (T later) | – | 1 external (usually) + poster frame | binary | chunked envelope for streaming (spec with the video phase) |
@@ -208,8 +212,8 @@ only a few vaults. The open action accepts only folders containing
 `vault.meta`; arbitrary folders are rejected. The home uses a small Vista-style
 folder icon drawn in code. The current in-vault workspace follows a
 KeePass-style shell (menu + toolbar, tabs, group tree, details/icons, info
-pane) with real SQLCipher-backed password CRUD; the Explorer-style browser
-below remains the target registry-driven UI.
+pane) with real SQLCipher-backed password CRUD and confidential/secret notes;
+the Explorer-style browser below remains the target registry-driven UI.
 
 Single-window browser; no dock/tab workspace:
 

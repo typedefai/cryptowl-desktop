@@ -13,9 +13,10 @@ specified in [`docs/`](docs/) — it replaces the earlier Python prototypes.
 Early scaffold: minimal Qt Widgets application (window, menus, Cryptomator-style
 vault home with recent vaults, password unlock against `vault.meta`,
 QtKeychain-backed device-secret migration, vault creation with a SQLCipher
-`vault.db`, S-tier password CRUD in a KeePass-style workspace, and a vault-info
-dialog, smoke tests) and the byte-exact **crypto core** (P1) of the vault
-format. `config.sig` verification and the remaining item types are next — see
+`vault.db`, S-tier password CRUD plus confidential/secret notes in a
+KeePass-style workspace, and a vault-info dialog, smoke tests) and the
+byte-exact **crypto core** (P1) of the vault format. `config.sig` verification
+and the remaining item types are next — see
 [docs/implementation-plan.md](docs/implementation-plan.md).
 
 > SQLCipher **5.0.0-beta.1** is pre-release and uses v5 defaults; existing

@@ -1,5 +1,6 @@
 #include "VaultView.h"
 
+#include "NoteEditorDialog.h"
 #include "PasswordEditorDialog.h"
 #include "vault/ItemRepository.h"
 #include "vault/VaultSession.h"
@@ -37,6 +38,9 @@ using cryptowl::vault::ItemRecord;
 using cryptowl::vault::ItemSummary;
 using cryptowl::vault::ItemUpdate;
 using cryptowl::vault::NewItem;
+
+constexpr const char *kPasswordType = "password";
+constexpr const char *kNoteType = "plain";
 
 QString escapedOrDash(const QString &text)
 {
@@ -138,10 +142,8 @@ VaultView::VaultView(QString vaultPath,
 
     layout->addWidget(splitter);
 
-    if (auto *allItems = m_structure->topLevelItem(0)) {
-        allItems->setExpanded(true);
+    if (auto *allItems = m_structure->topLevelItem(0))
         m_structure->setCurrentItem(allItems);
-    }
 
     reload();
 }
@@ -171,8 +173,21 @@ QWidget *VaultView::createStructurePane()
     m_structure->setMinimumWidth(180);
 
     auto *allItems = new QTreeWidgetItem(m_structure, {tr("All Items")});
-    new QTreeWidgetItem(allItems, {tr("Passwords")});
+    allItems->setData(0, Qt::UserRole, QString());
+
+    auto *passwords = new QTreeWidgetItem(allItems, {tr("Passwords")});
+    passwords->setData(0, Qt::UserRole, QString::fromLatin1(kPasswordType));
+
+    auto *notes = new QTreeWidgetItem(allItems, {tr("Notes")});
+    notes->setData(0, Qt::UserRole, QString::fromLatin1(kNoteType));
     allItems->setExpanded(true);
+
+    connect(m_structure, &QTreeWidget::currentItemChanged, this,
+            [this](QTreeWidgetItem *current, QTreeWidgetItem *) {
+                m_currentType =
+                    current ? current->data(0, Qt::UserRole).toString() : QString();
+                refreshLists();
+            });
 
     layout->addWidget(m_structure, 1);
     return pane;
@@ -192,7 +207,7 @@ QWidget *VaultView::createContentPane()
     m_details->setObjectName(QStringLiteral("vaultDetails"));
     m_details->setColumnCount(4);
     m_details->setHeaderLabels(
-        {tr("Title"), tr("User name"), tr("URL"), tr("Modified")});
+        {tr("Title"), tr("Type"), tr("Summary"), tr("Modified")});
     m_details->setRootIsDecorated(false);
     m_details->setAlternatingRowColors(true);
     m_details->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -241,7 +256,7 @@ void VaultView::reload(const QString &selectId)
 
     std::vector<ItemSummary> items;
     std::string error;
-    if (!m_session->items().list("password", &items, &error)) {
+    if (!m_session->items().list(std::string(), &items, &error)) {
         m_loadError = QString::fromStdString(error);
         updateGroupCounts();
         refreshLists();
@@ -249,8 +264,9 @@ void VaultView::reload(const QString &selectId)
     }
 
     for (const ItemSummary &item : items) {
-        PasswordRow row;
+        ItemRow row;
         row.id = QString::fromStdString(item.id);
+        row.type = QString::fromStdString(item.type);
         row.title = QString::fromStdString(item.title);
         row.classification = QString::fromStdString(item.classification);
         row.updatedAt = item.updatedAt;
@@ -265,6 +281,25 @@ void VaultView::reload(const QString &selectId)
     refreshLists(selectId);
 }
 
+void VaultView::selectTypeFilter(const QString &type)
+{
+    m_currentType = type;
+    if (auto *allItems = m_structure->topLevelItem(0)) {
+        if (type.isEmpty()) {
+            m_structure->setCurrentItem(allItems);
+        } else {
+            for (int i = 0; i < allItems->childCount(); ++i) {
+                QTreeWidgetItem *child = allItems->child(i);
+                if (child->data(0, Qt::UserRole).toString() == type) {
+                    m_structure->setCurrentItem(child);
+                    break;
+                }
+            }
+        }
+    }
+    refreshLists();
+}
+
 void VaultView::refreshLists(const QString &selectId)
 {
     m_details->clear();
@@ -273,7 +308,9 @@ void VaultView::refreshLists(const QString &selectId)
     QString needle = m_filter;
     needle = needle.trimmed().toCaseFolded();
 
-    for (const PasswordRow &row : m_rows) {
+    for (const ItemRow &row : m_rows) {
+        if (!m_currentType.isEmpty() && row.type != m_currentType)
+            continue;
         if (!needle.isEmpty()) {
             const QString haystack =
                 QStringList{row.title, row.username, row.url}.join(QLatin1Char(' '))
@@ -284,17 +321,18 @@ void VaultView::refreshLists(const QString &selectId)
 
         auto *detail =
             new QTreeWidgetItem(m_details,
-                                {row.title, row.username, row.url,
+                                {row.title, typeLabel(row), summaryText(row),
                                  listDateText(row.updatedAt)});
         detail->setData(0, Qt::UserRole, row.id);
+        detail->setToolTip(0, row.title);
+        detail->setToolTip(1, typeLabel(row));
+        detail->setToolTip(2, summaryText(row));
         detail->setToolTip(3, updatedText(row.updatedAt));
 
         auto *icon = new QListWidgetItem(
             style()->standardIcon(QStyle::SP_FileIcon), row.title, m_icons);
         icon->setData(Qt::UserRole, row.id);
-        icon->setToolTip(row.username.isEmpty()
-                             ? row.title
-                             : tr("%1\n%2").arg(row.title, row.username));
+        icon->setToolTip(tr("%1\n%2").arg(typeLabel(row), summaryText(row)));
     }
 
     if (!selectId.isEmpty())
@@ -305,16 +343,64 @@ void VaultView::refreshLists(const QString &selectId)
 void VaultView::updateGroupCounts()
 {
     auto *allItems = m_structure ? m_structure->topLevelItem(0) : nullptr;
-    if (!allItems || allItems->childCount() == 0)
+    if (!allItems || allItems->childCount() < 2)
         return;
-    allItems->child(0)->setText(
-        0, tr("Passwords (%1)").arg(m_rows.size()));
+
+    int passwords = 0;
+    int notes = 0;
+    for (const ItemRow &row : m_rows) {
+        if (row.type == QLatin1String(kPasswordType))
+            ++passwords;
+        else if (row.type == QLatin1String(kNoteType))
+            ++notes;
+    }
+    allItems->child(0)->setText(0, tr("Passwords (%1)").arg(passwords));
+    allItems->child(1)->setText(0, tr("Notes (%1)").arg(notes));
+}
+
+QString VaultView::typeLabel(const ItemRow &row) const
+{
+    if (row.type == QLatin1String(kPasswordType))
+        return tr("Password");
+    if (row.type == QLatin1String(kNoteType))
+        return tr("Note");
+    return row.type;
+}
+
+QString VaultView::summaryText(const ItemRow &row) const
+{
+    if (row.type == QLatin1String(kPasswordType)) {
+        if (!row.username.isEmpty())
+            return row.username;
+        if (!row.url.isEmpty())
+            return row.url;
+        return QStringLiteral("—");
+    }
+    if (row.type == QLatin1String(kNoteType)) {
+        if (row.classification == QLatin1String("S"))
+            return tr("Secret");
+        if (row.classification == QLatin1String("T"))
+            return tr("Top Secret");
+        return tr("Confidential");
+    }
+    return row.classification;
+}
+
+QString VaultView::classificationLabel(const QString &classification) const
+{
+    if (classification == QLatin1String("C"))
+        return tr("C — Confidential");
+    if (classification == QLatin1String("S"))
+        return tr("S — Secret");
+    if (classification == QLatin1String("T"))
+        return tr("T — Top Secret");
+    return classification;
 }
 
 void VaultView::updateInfo()
 {
     if (!m_loadError.isEmpty()) {
-        m_info->setHtml(tr("<b>Could not load passwords:</b> %1")
+        m_info->setHtml(tr("<b>Could not load items:</b> %1")
                             .arg(m_loadError.toHtmlEscaped()));
         return;
     }
@@ -324,28 +410,57 @@ void VaultView::updateInfo()
     }
 
     const QString id = selectedId();
-    const PasswordRow *row = id.isEmpty() ? nullptr : rowForId(id);
+    const ItemRow *row = id.isEmpty() ? nullptr : rowForId(id);
     if (!row) {
         if (m_rows.isEmpty()) {
             m_info->setHtml(
-                tr("<i>No passwords yet. Use <b>New password…</b> to create one.</i>"));
-        } else if (!m_filter.trimmed().isEmpty()) {
-            m_info->setHtml(tr("<i>No passwords match the current search.</i>"));
+                tr("<i>No items yet. Use <b>New password…</b> or "
+                   "<b>New note…</b> to create one.</i>"));
+        } else if (!m_filter.trimmed().isEmpty() || !m_currentType.isEmpty()) {
+            m_info->setHtml(tr("<i>No items match the current view.</i>"));
         } else {
-            m_info->setHtml(tr("<i>Select a password to see details.</i>"));
+            m_info->setHtml(tr("<i>Select an item to see details.</i>"));
         }
         return;
     }
 
-    const QString classification =
-        row->classification == QLatin1String("S") ? tr("S — Secret")
-        : row->classification == QLatin1String("T") ? tr("T — Top Secret")
-                                                    : row->classification;
+    if (row->type == QLatin1String(kNoteType)) {
+        ItemRecord record;
+        std::string error;
+        QString body;
+        if (m_session->items().get(row->id.toStdString(), &record, &error)) {
+            QString noteText = QString::fromStdString(record.payload);
+            body = noteText.left(4000).toHtmlEscaped();
+            body.replace(QLatin1Char('\n'), QStringLiteral("<br>"));
+            if (noteText.size() > 4000)
+                body += QStringLiteral("<br>…");
+            wipe(record.payload);
+            wipe(noteText);
+        } else {
+            body = tr("<i>Could not read this note.</i>");
+        }
+
+        if (body.isEmpty())
+            body = tr("<i>No content yet.</i>");
+
+        m_info->setHtml(
+            tr("<h3>%1</h3>"
+               "<table cellspacing=\"4\">"
+               "<tr><td><b>Type</b></td><td>Note</td></tr>"
+               "<tr><td><b>Classification</b></td><td>%2</td></tr>"
+               "<tr><td><b>Modified</b></td><td>%3</td></tr>"
+               "</table><h4>Note</h4><p>%4</p>")
+                .arg(row->title.toHtmlEscaped(),
+                     classificationLabel(row->classification).toHtmlEscaped(),
+                     updatedText(row->updatedAt), body));
+        emit statusMessage(tr("Selected: %1").arg(row->title));
+        return;
+    }
 
     m_info->setHtml(
         tr("<h3>%1</h3>"
            "<table cellspacing=\"4\">"
-           "<tr><td><b>Group</b></td><td>Passwords</td></tr>"
+           "<tr><td><b>Type</b></td><td>Password</td></tr>"
            "<tr><td><b>User name</b></td><td>%2</td></tr>"
            "<tr><td><b>Password</b></td><td>••••••••</td></tr>"
            "<tr><td><b>URL</b></td><td>%3</td></tr>"
@@ -353,7 +468,8 @@ void VaultView::updateInfo()
            "<tr><td><b>Modified</b></td><td>%5</td></tr>"
            "</table><p><i>Use Edit to reveal or change the password.</i></p>")
             .arg(row->title.toHtmlEscaped(), escapedOrDash(row->username),
-                 escapedOrDash(row->url), classification.toHtmlEscaped(),
+                 escapedOrDash(row->url),
+                 classificationLabel(row->classification).toHtmlEscaped(),
                  updatedText(row->updatedAt)));
 
     emit statusMessage(tr("Selected: %1").arg(row->title));
@@ -391,23 +507,29 @@ void VaultView::showContextMenu(QAbstractItemView *view, const QPoint &pos)
     if (index.isValid())
         view->setCurrentIndex(index);
 
-    const bool hasSelection = !selectedId().isEmpty();
+    const QString id = selectedId();
+    const ItemRow *row = id.isEmpty() ? nullptr : rowForId(id);
+    const bool hasSelection = row != nullptr;
+    const bool isPassword = row && row->type == QLatin1String(kPasswordType);
 
     QMenu menu(this);
-    QAction *addAction = menu.addAction(tr("New password…"));
+    QAction *addPasswordAction = menu.addAction(tr("New password…"));
+    QAction *addNoteAction = menu.addAction(tr("New note…"));
     menu.addSeparator();
-    QAction *editAction = menu.addAction(tr("Edit password…"));
+    QAction *editAction = menu.addAction(tr("Edit…"));
     QAction *copyUsernameAction = menu.addAction(tr("Copy user name"));
     menu.addSeparator();
-    QAction *deleteAction = menu.addAction(tr("Delete password"));
+    QAction *deleteAction = menu.addAction(tr("Delete"));
 
     editAction->setEnabled(hasSelection);
-    copyUsernameAction->setEnabled(hasSelection);
+    copyUsernameAction->setEnabled(isPassword);
     deleteAction->setEnabled(hasSelection);
 
     QAction *chosen = menu.exec(view->viewport()->mapToGlobal(pos));
-    if (chosen == addAction)
+    if (chosen == addPasswordAction)
         addEntry();
+    else if (chosen == addNoteAction)
+        addNote();
     else if (chosen == editAction)
         editSelectedEntry();
     else if (chosen == copyUsernameAction)
@@ -434,9 +556,9 @@ QString VaultView::selectedId() const
     return item->data(Qt::UserRole).toString();
 }
 
-const VaultView::PasswordRow *VaultView::rowForId(const QString &id) const
+const VaultView::ItemRow *VaultView::rowForId(const QString &id) const
 {
-    for (const PasswordRow &row : m_rows) {
+    for (const ItemRow &row : m_rows) {
         if (row.id == id)
             return &row;
     }
@@ -484,7 +606,7 @@ void VaultView::addEntry()
     QByteArray payload = passwordPayload(data);
 
     NewItem item;
-    item.type = "password";
+    item.type = kPasswordType;
     item.classification = "S";
     item.title = data.title.toStdString();
     item.meta = meta.toStdString();
@@ -504,8 +626,49 @@ void VaultView::addEntry()
         return;
     }
 
+    if (!m_currentType.isEmpty())
+        selectTypeFilter(QString::fromLatin1(kPasswordType));
     reload(QString::fromStdString(id));
     emit statusMessage(tr("Created password: %1").arg(data.title));
+}
+
+void VaultView::addNote()
+{
+    if (!m_session)
+        return;
+
+    NoteEditorDialog dialog(this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    NoteEditorDialog::Data data = dialog.data();
+    if (data.classification != QLatin1String("S"))
+        data.classification = QStringLiteral("C");
+
+    NewItem item;
+    item.type = kNoteType;
+    item.classification = data.classification.toStdString();
+    item.title = data.title.toStdString();
+    item.meta = "{}";
+    item.payload = data.body.toStdString();
+
+    std::string id;
+    std::string error;
+    const bool created = m_session->items().create(item, &id, &error);
+
+    wipe(item.payload);
+    wipe(data.body);
+
+    if (!created) {
+        QMessageBox::critical(this, tr("Could not save note"),
+                              QString::fromStdString(error));
+        return;
+    }
+
+    if (!m_currentType.isEmpty())
+        selectTypeFilter(QString::fromLatin1(kNoteType));
+    reload(QString::fromStdString(id));
+    emit statusMessage(tr("Created note: %1").arg(data.title));
 }
 
 void VaultView::editSelectedEntry()
@@ -513,6 +676,19 @@ void VaultView::editSelectedEntry()
     if (!m_session)
         return;
 
+    const QString id = selectedId();
+    const ItemRow *row = id.isEmpty() ? nullptr : rowForId(id);
+    if (!row)
+        return;
+
+    if (row->type == QLatin1String(kNoteType))
+        editSelectedNote();
+    else if (row->type == QLatin1String(kPasswordType))
+        editSelectedPassword();
+}
+
+void VaultView::editSelectedPassword()
+{
     const QString id = selectedId();
     if (id.isEmpty())
         return;
@@ -551,6 +727,7 @@ void VaultView::editSelectedEntry()
 
     ItemUpdate update;
     update.title = data.title.toStdString();
+    update.classification = "S";
     update.meta = metaJson.toStdString();
     update.payload = payloadJson.toStdString();
 
@@ -570,40 +747,97 @@ void VaultView::editSelectedEntry()
     emit statusMessage(tr("Updated password: %1").arg(data.title));
 }
 
+void VaultView::editSelectedNote()
+{
+    const QString id = selectedId();
+    if (id.isEmpty())
+        return;
+
+    ItemRecord record;
+    std::string error;
+    if (!m_session->items().get(id.toStdString(), &record, &error)) {
+        QMessageBox::critical(this, tr("Could not read note"),
+                              QString::fromStdString(error));
+        return;
+    }
+
+    NoteEditorDialog::Data data;
+    data.title = QString::fromStdString(record.title);
+    data.body = QString::fromStdString(record.payload);
+    data.classification = QString::fromStdString(record.classification);
+    if (data.classification != QLatin1String("S"))
+        data.classification = QStringLiteral("C");
+    wipe(record.payload);
+
+    NoteEditorDialog dialog(data, this);
+    wipe(data.body);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    data = dialog.data();
+    if (data.classification != QLatin1String("S"))
+        data.classification = QStringLiteral("C");
+
+    ItemUpdate update;
+    update.title = data.title.toStdString();
+    update.classification = data.classification.toStdString();
+    update.meta = "{}";
+    update.payload = data.body.toStdString();
+
+    const bool updated = m_session->items().update(id.toStdString(), update, &error);
+
+    wipe(update.payload);
+    wipe(data.body);
+
+    if (!updated) {
+        QMessageBox::critical(this, tr("Could not update note"),
+                              QString::fromStdString(error));
+        return;
+    }
+
+    reload(id);
+    emit statusMessage(tr("Updated note: %1").arg(data.title));
+}
+
 void VaultView::deleteSelectedEntry()
 {
     if (!m_session)
         return;
 
     const QString id = selectedId();
-    const PasswordRow *row = id.isEmpty() ? nullptr : rowForId(id);
+    const ItemRow *row = id.isEmpty() ? nullptr : rowForId(id);
     if (!row)
         return;
 
-    if (QMessageBox::question(this, tr("Delete password"),
-                              tr("Delete “%1”?").arg(row->title))
+    const QString title = row->title;
+    const QString type = row->type;
+    if (QMessageBox::question(this, tr("Delete item"),
+                              tr("Delete “%1”?").arg(title))
         != QMessageBox::Yes) {
         return;
     }
 
     std::string error;
     if (!m_session->items().softDelete(id.toStdString(), &error)) {
-        QMessageBox::critical(this, tr("Could not delete password"),
+        QMessageBox::critical(this, tr("Could not delete item"),
                               QString::fromStdString(error));
         return;
     }
 
-    const QString title = row->title;
     reload();
-    emit statusMessage(tr("Deleted password: %1").arg(title));
+    if (type == QLatin1String(kNoteType))
+        emit statusMessage(tr("Deleted note: %1").arg(title));
+    else
+        emit statusMessage(tr("Deleted password: %1").arg(title));
 }
 
 void VaultView::copySelectedUsername()
 {
     const QString id = selectedId();
-    const PasswordRow *row = id.isEmpty() ? nullptr : rowForId(id);
-    if (!row)
+    const ItemRow *row = id.isEmpty() ? nullptr : rowForId(id);
+    if (!row || row->type != QLatin1String(kPasswordType))
         return;
+
     if (row->username.isEmpty()) {
         emit statusMessage(tr("This password has no user name."));
         return;

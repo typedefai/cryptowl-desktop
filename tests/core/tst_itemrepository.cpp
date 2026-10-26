@@ -53,6 +53,18 @@ NewItem passwordItem(const std::string &title, const std::string &username,
     return item;
 }
 
+NewItem noteItem(const std::string &title, const std::string &body,
+                 const std::string &classification)
+{
+    NewItem item;
+    item.type = "plain";
+    item.classification = classification;
+    item.title = title;
+    item.meta = "{}";
+    item.payload = body;
+    return item;
+}
+
 int scalarInt(sqlite3 *database, const char *sql)
 {
     int value = -1;
@@ -80,6 +92,7 @@ class TestItemRepository : public QObject
 
 private slots:
     void crudRoundTrip();
+    void noteTierRoundTrip();
     void preservesItemsAcrossSessions();
     void rejectsWrongSmk();
 };
@@ -144,6 +157,68 @@ void TestItemRepository::crudRoundTrip()
     QVERIFY2(repository.list("password", &items, &error), error.c_str());
     QVERIFY(items.empty());
     QVERIFY(!repository.get(id, &record, &error));
+}
+
+void TestItemRepository::noteTierRoundTrip()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString databasePath = dir.filePath(QStringLiteral("vault.db"));
+    QVERIFY(VaultDatabase::create(databasePath.toStdString(), kVaultKey));
+
+    std::string error;
+    auto session = openSession(databasePath, kSmk, &error);
+    QVERIFY2(session != nullptr, error.c_str());
+    ItemRepository &repository = session->items();
+
+    std::string id;
+    QVERIFY2(repository.create(noteItem("Project notes", "confidential body", "C"),
+                               &id, &error),
+             error.c_str());
+
+    ItemRecord record;
+    QVERIFY2(repository.get(id, &record, &error), error.c_str());
+    QCOMPARE(QString::fromStdString(record.classification), QStringLiteral("C"));
+    QCOMPARE(QString::fromStdString(record.payload),
+             QStringLiteral("confidential body"));
+    QCOMPARE(scalarInt(session->handle(),
+                       "SELECT count(*) FROM t_item_version;"),
+             1);
+
+    ItemUpdate makeSecret;
+    makeSecret.title = "Project notes";
+    makeSecret.classification = "S";
+    makeSecret.meta = "{}";
+    makeSecret.payload = "secret body";
+    QVERIFY2(repository.update(id, makeSecret, &error), error.c_str());
+    QVERIFY2(repository.get(id, &record, &error), error.c_str());
+    QCOMPARE(QString::fromStdString(record.classification), QStringLiteral("S"));
+    QCOMPARE(QString::fromStdString(record.payload), QStringLiteral("secret body"));
+    QCOMPARE(scalarInt(session->handle(),
+                       "SELECT count(*) FROM t_item_version;"),
+             2);
+
+    ItemUpdate makeConfidential;
+    makeConfidential.title = "Project notes";
+    makeConfidential.classification = "C";
+    makeConfidential.meta = "{}";
+    makeConfidential.payload = "updated confidential body";
+    QVERIFY2(repository.update(id, makeConfidential, &error), error.c_str());
+    QVERIFY2(repository.get(id, &record, &error), error.c_str());
+    QCOMPARE(QString::fromStdString(record.classification), QStringLiteral("C"));
+    QCOMPARE(QString::fromStdString(record.payload),
+             QStringLiteral("updated confidential body"));
+    QCOMPARE(scalarInt(session->handle(),
+                       "SELECT count(*) FROM t_item_version;"),
+             3);
+
+    std::string emptyId;
+    QVERIFY2(repository.create(noteItem("Empty note", "", "S"), &emptyId, &error),
+             error.c_str());
+    ItemRecord emptyRecord;
+    QVERIFY2(repository.get(emptyId, &emptyRecord, &error), error.c_str());
+    QCOMPARE(QString::fromStdString(emptyRecord.classification), QStringLiteral("S"));
+    QVERIFY(emptyRecord.payload.empty());
 }
 
 void TestItemRepository::preservesItemsAcrossSessions()

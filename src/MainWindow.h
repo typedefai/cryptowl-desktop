@@ -59,6 +59,7 @@ private:
     QAction *m_lockVaultAction = nullptr;
     QAction *m_vaultInfoAction = nullptr;
     QAction *m_addEntryAction = nullptr;
+    QAction *m_addNoteAction = nullptr;
     QAction *m_editEntryAction = nullptr;
     QAction *m_deleteEntryAction = nullptr;
     QAction *m_copyUsernameAction = nullptr;

@@ -52,6 +52,18 @@ NewItem passwordItem(const std::string &title, const std::string &username,
     return item;
 }
 
+NewItem noteItem(const std::string &title, const std::string &body,
+                 const std::string &classification)
+{
+    NewItem item;
+    item.type = "plain";
+    item.classification = classification;
+    item.title = title;
+    item.meta = "{}";
+    item.payload = body;
+    return item;
+}
+
 } // namespace
 
 class TestVaultView : public QObject
@@ -60,6 +72,7 @@ class TestVaultView : public QObject
 
 private slots:
     void showsStoredPasswords();
+    void showsNotesAndFiltersByType();
     void filtersPasswords();
     void switchesToIconView();
 };
@@ -92,9 +105,11 @@ void TestVaultView::showsStoredPasswords()
     QVERIFY(info);
 
     QCOMPARE(structure->topLevelItemCount(), 1);
-    QCOMPARE(structure->topLevelItem(0)->childCount(), 1);
+    QCOMPARE(structure->topLevelItem(0)->childCount(), 2);
     QVERIFY(structure->topLevelItem(0)->child(0)->text(0).contains(
         QStringLiteral("Passwords (2)")));
+    QVERIFY(structure->topLevelItem(0)->child(1)->text(0).contains(
+        QStringLiteral("Notes (0)")));
     QCOMPARE(details->topLevelItemCount(), 2);
 
     QTreeWidgetItem *github = nullptr;
@@ -107,6 +122,56 @@ void TestVaultView::showsStoredPasswords()
     QVERIFY(info->toPlainText().contains(QStringLiteral("GitHub")));
     QVERIFY(info->toPlainText().contains(QStringLiteral("riguz")));
     QVERIFY(!info->toPlainText().contains(QStringLiteral("mock-secret")));
+}
+
+void TestVaultView::showsNotesAndFiltersByType()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString databasePath = dir.filePath(QStringLiteral("vault.db"));
+    QVERIFY(VaultDatabase::create(databasePath.toStdString(), kVaultKey));
+
+    std::string error;
+    auto session = openSession(databasePath, &error);
+    QVERIFY2(session != nullptr, error.c_str());
+
+    std::string id;
+    QVERIFY2(session->items().create(
+                 passwordItem("GitHub", "riguz", "secret"), &id, &error),
+             error.c_str());
+    QVERIFY2(session->items().create(
+                 noteItem("Project", "first note body", "C"), &id, &error),
+             error.c_str());
+    QVERIFY2(session->items().create(
+                 noteItem("Private", "secret note body", "S"), &id, &error),
+             error.c_str());
+
+    VaultView view(QStringLiteral("/tmp/mock-vault"), session);
+    auto *structure = view.findChild<QTreeWidget *>(QStringLiteral("vaultStructure"));
+    auto *details = view.findChild<QTreeWidget *>(QStringLiteral("vaultDetails"));
+    auto *info = view.findChild<QTextBrowser *>(QStringLiteral("vaultInfo"));
+    QVERIFY(structure);
+    QVERIFY(details);
+    QVERIFY(info);
+
+    QVERIFY(structure->topLevelItem(0)->child(0)->text(0).contains(
+        QStringLiteral("Passwords (1)")));
+    QVERIFY(structure->topLevelItem(0)->child(1)->text(0).contains(
+        QStringLiteral("Notes (2)")));
+    QCOMPARE(details->topLevelItemCount(), 3);
+
+    structure->setCurrentItem(structure->topLevelItem(0)->child(1));
+    QCOMPARE(details->topLevelItemCount(), 2);
+
+    QTreeWidgetItem *project = nullptr;
+    for (int i = 0; i < details->topLevelItemCount(); ++i) {
+        if (details->topLevelItem(i)->text(0) == QStringLiteral("Project"))
+            project = details->topLevelItem(i);
+    }
+    QVERIFY(project);
+    details->setCurrentItem(project);
+    QVERIFY(info->toPlainText().contains(QStringLiteral("first note body")));
+    QVERIFY(info->toPlainText().contains(QStringLiteral("Confidential")));
 }
 
 void TestVaultView::filtersPasswords()

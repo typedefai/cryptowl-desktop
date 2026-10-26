@@ -107,6 +107,13 @@ void MainWindow::createActions()
             view->addEntry();
     });
 
+    m_addNoteAction = new QAction(
+        style()->standardIcon(QStyle::SP_FileIcon), tr("New &note…"), this);
+    connect(m_addNoteAction, &QAction::triggered, this, [this] {
+        if (auto *view = currentVaultView())
+            view->addNote();
+    });
+
     m_editEntryAction = new QAction(
         style()->standardIcon(QStyle::SP_FileDialogDetailedView), tr("&Edit password…"),
         this);
@@ -159,6 +166,7 @@ void MainWindow::createMenus()
 
     QMenu *editMenu = menuBar()->addMenu(tr("&Edit"));
     editMenu->addAction(m_addEntryAction);
+    editMenu->addAction(m_addNoteAction);
     editMenu->addAction(m_editEntryAction);
     editMenu->addAction(m_deleteEntryAction);
     editMenu->addSeparator();
@@ -182,6 +190,7 @@ void MainWindow::createToolBar()
     toolBar->addAction(m_openVaultAction);
     toolBar->addSeparator();
     toolBar->addAction(m_addEntryAction);
+    toolBar->addAction(m_addNoteAction);
     toolBar->addAction(m_editEntryAction);
     toolBar->addAction(m_deleteEntryAction);
     toolBar->addSeparator();
@@ -382,8 +391,9 @@ void MainWindow::updateWorkspaceActions()
 {
     const bool hasVault = currentVaultView() != nullptr;
     const QList<QAction *> actions = {
-        m_lockVaultAction, m_vaultInfoAction, m_addEntryAction, m_editEntryAction,
-        m_deleteEntryAction, m_copyUsernameAction, m_detailsAction, m_iconsAction,
+        m_lockVaultAction, m_vaultInfoAction, m_addEntryAction, m_addNoteAction,
+        m_editEntryAction, m_deleteEntryAction, m_copyUsernameAction,
+        m_detailsAction, m_iconsAction,
     };
     for (QAction *action : actions)
         action->setEnabled(hasVault);

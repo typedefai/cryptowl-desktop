@@ -85,8 +85,8 @@ logged.
 
 ### P3 — Item model ◐
 
-- ✅ `ItemRepository`: list/get/create/update/soft-delete over `t_item` for the
-  S-tier password type; pin/tree/type-registry expansion pending
+- ✅ `ItemRepository`: list/get/create/update/soft-delete over `t_item` for
+  S-tier passwords and C/S notes; pin/tree/type-registry expansion pending
 - ✅ S-tier plumbing: `t_data_encrypt_key` + `t_encrypted_data`, DEK per item,
   KEK dev binding (`t_wrapped_key` role=kek wrapper=smk), AAD = record id
 - ◐ T tier: secondary password setup, TS-KEK, TopSecretKEK wrap/unwrap
@@ -119,7 +119,8 @@ logged.
   Argon2id parameters, key states, wrapped-key metadata, salts, and files;
   key material and wrapped ciphertext are never displayed
 - Browser: sidebar + filter/search + list + detail; C/S/T badges; empty states
-- Note editor (C): plain text + markdown preview (`QTextDocument::setMarkdown`)
+- ✅ Note editor (C by default, S optional): title + text, confidential/secret
+  level switcher, create/edit/soft-delete; markdown preview pending
 - ◐ Password editor (S): username/url/secret/notes JSON payload, show/hide,
   create/edit/soft-delete; KEK is session-scoped, generator and per-reveal
   master-password re-prompt pending; password is never copied

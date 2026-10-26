@@ -48,6 +48,7 @@ struct NewItem
 struct ItemUpdate
 {
     std::string title;
+    std::string classification;
     std::string meta;
     std::string payload;
 };

@@ -33,6 +33,7 @@ public:
     void showDetails();
     void showIcons();
     void addEntry();
+    void addNote();
     void editSelectedEntry();
     void deleteSelectedEntry();
     void copySelectedUsername();
@@ -41,9 +42,10 @@ signals:
     void statusMessage(const QString &message);
 
 private:
-    struct PasswordRow
+    struct ItemRow
     {
         QString id;
+        QString type;
         QString title;
         QString username;
         QString url;
@@ -55,16 +57,23 @@ private:
     QWidget *createContentPane();
     void reload(const QString &selectId = QString());
     void refreshLists(const QString &selectId = QString());
+    void selectTypeFilter(const QString &type);
     void updateInfo();
     void updateGroupCounts();
     void showContextMenu(QAbstractItemView *view, const QPoint &pos);
+    void editSelectedPassword();
+    void editSelectedNote();
     QString selectedId() const;
     void selectItem(const QString &id);
-    const PasswordRow *rowForId(const QString &id) const;
+    const ItemRow *rowForId(const QString &id) const;
+    QString typeLabel(const ItemRow &row) const;
+    QString summaryText(const ItemRow &row) const;
+    QString classificationLabel(const QString &classification) const;
 
     QString m_vaultPath;
     std::shared_ptr<cryptowl::vault::VaultSession> m_session;
-    QList<PasswordRow> m_rows;
+    QList<ItemRow> m_rows;
+    QString m_currentType;
     QString m_filter;
     QString m_loadError;
     QTreeWidget *m_structure = nullptr;

@@ -91,3 +91,15 @@ add_test(NAME tst_passwordeditordialog COMMAND tst_passwordeditordialog)
 set_tests_properties(tst_passwordeditordialog PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
+
+qt_add_executable(tst_noteeditordialog
+    tst_noteeditordialog.cpp
+)
+
+target_link_libraries(tst_noteeditordialog PRIVATE cryptowl_ui Qt6::Test)
+
+add_test(NAME tst_noteeditordialog COMMAND tst_noteeditordialog)
+
+set_tests_properties(tst_noteeditordialog PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)

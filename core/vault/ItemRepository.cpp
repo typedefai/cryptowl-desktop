@@ -304,14 +304,14 @@ bool insertEncryptedData(sqlite3 *db, const std::string &dataId,
 }
 
 bool insertItem(sqlite3 *db, const std::string &itemId, const NewItem &item,
-                const std::string &dataId, std::int64_t timestamp,
-                std::string *error)
+                const std::string &content, const std::string &dataId,
+                std::int64_t timestamp, std::string *error)
 {
     static constexpr const char *kSql =
         "INSERT INTO t_item "
         "(id, type, title, classification, parent_id, pinned, content, "
         " encrypted_data_id, meta, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?);";
+        "VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?);";
     Statement statement(db, kSql, error);
     if (!statement.ok() || !bindText(statement.get(), 1, itemId, error)
         || !bindText(statement.get(), 2, item.type, error)
@@ -327,10 +327,21 @@ bool insertItem(sqlite3 *db, const std::string &itemId, const NewItem &item,
         return false;
     }
 
-    if (!bindText(statement.get(), 6, dataId, error)
-        || !bindText(statement.get(), 7, item.meta, error)
-        || sqlite3_bind_int64(statement.get(), 8, timestamp) != SQLITE_OK
-        || sqlite3_bind_int64(statement.get(), 9, timestamp) != SQLITE_OK) {
+    if (dataId.empty()) {
+        if (!bindText(statement.get(), 6, content, error)
+            || sqlite3_bind_null(statement.get(), 7) != SQLITE_OK) {
+            return false;
+        }
+    } else {
+        if (sqlite3_bind_null(statement.get(), 6) != SQLITE_OK
+            || !bindText(statement.get(), 7, dataId, error)) {
+            return false;
+        }
+    }
+
+    if (!bindText(statement.get(), 8, item.meta, error)
+        || sqlite3_bind_int64(statement.get(), 9, timestamp) != SQLITE_OK
+        || sqlite3_bind_int64(statement.get(), 10, timestamp) != SQLITE_OK) {
         return false;
     }
     if (statement.step(error) != SQLITE_DONE) {
@@ -342,25 +353,39 @@ bool insertItem(sqlite3 *db, const std::string &itemId, const NewItem &item,
 
 bool insertVersion(sqlite3 *db, const std::string &itemId, int seq,
                    const std::string &classification, const std::string &title,
-                   const std::string &dataId, const std::string &meta,
-                   const std::string &fingerprint, std::int64_t timestamp,
-                   std::string *error)
+                   const std::string &content, const std::string &dataId,
+                   const std::string &meta, const std::string &fingerprint,
+                   std::int64_t timestamp, std::string *error)
 {
     static constexpr const char *kSql =
         "INSERT INTO t_item_version "
         "(id, item_id, seq, classification, title, content, encrypted_data_id, "
         " meta, message, fingerprint, created_at) "
-        "VALUES (?, ?, ?, ?, ?, NULL, ?, ?, NULL, ?, ?);";
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?);";
     Statement statement(db, kSql, error);
     if (!statement.ok() || !bindText(statement.get(), 1, uuidV4(), error)
         || !bindText(statement.get(), 2, itemId, error)
         || sqlite3_bind_int(statement.get(), 3, seq) != SQLITE_OK
         || !bindText(statement.get(), 4, classification, error)
-        || !bindText(statement.get(), 5, title, error)
-        || !bindText(statement.get(), 6, dataId, error)
-        || !bindText(statement.get(), 7, meta, error)
-        || !bindText(statement.get(), 8, fingerprint, error)
-        || sqlite3_bind_int64(statement.get(), 9, timestamp) != SQLITE_OK) {
+        || !bindText(statement.get(), 5, title, error)) {
+        return false;
+    }
+
+    if (dataId.empty()) {
+        if (!bindText(statement.get(), 6, content, error)
+            || sqlite3_bind_null(statement.get(), 7) != SQLITE_OK) {
+            return false;
+        }
+    } else {
+        if (sqlite3_bind_null(statement.get(), 6) != SQLITE_OK
+            || !bindText(statement.get(), 7, dataId, error)) {
+            return false;
+        }
+    }
+
+    if (!bindText(statement.get(), 8, meta, error)
+        || !bindText(statement.get(), 9, fingerprint, error)
+        || sqlite3_bind_int64(statement.get(), 10, timestamp) != SQLITE_OK) {
         return false;
     }
     if (statement.step(error) != SQLITE_DONE) {
@@ -439,12 +464,19 @@ bool ItemRepository::list(const std::string &type,
         return false;
     }
 
-    static constexpr const char *kSql =
+    static constexpr const char *kSqlWithType =
         "SELECT id, type, title, classification, meta, pinned, updated_at "
         "FROM t_item WHERE type = ? AND deleted_at IS NULL "
         "ORDER BY updated_at DESC, title COLLATE NOCASE;";
-    Statement statement(m_database.handle(), kSql, error);
-    if (!statement.ok() || !bindText(statement.get(), 1, type, error))
+    static constexpr const char *kSqlAllTypes =
+        "SELECT id, type, title, classification, meta, pinned, updated_at "
+        "FROM t_item WHERE deleted_at IS NULL "
+        "ORDER BY updated_at DESC, title COLLATE NOCASE;";
+    Statement statement(m_database.handle(),
+                        type.empty() ? kSqlAllTypes : kSqlWithType, error);
+    if (!statement.ok())
+        return false;
+    if (!type.empty() && !bindText(statement.get(), 1, type, error))
         return false;
 
     while (true) {
@@ -480,11 +512,12 @@ bool ItemRepository::get(const std::string &id, ItemRecord *item,
 
     static constexpr const char *kSql =
         "SELECT i.id, i.type, i.title, i.classification, i.parent_id, i.meta, "
-        "       i.created_at, i.updated_at, e.id, e.dek_id, e.content, e.nonce, "
-        "       e.auth_tag "
+        "       i.created_at, i.updated_at, i.content, e.id, e.dek_id, e.content, "
+        "       e.nonce, e.auth_tag "
         "FROM t_item i "
-        "JOIN t_encrypted_data e ON e.id = i.encrypted_data_id "
-        "WHERE i.id = ? AND i.deleted_at IS NULL AND e.deleted_at IS NULL;";
+        "LEFT JOIN t_encrypted_data e "
+        "  ON e.id = i.encrypted_data_id AND e.deleted_at IS NULL "
+        "WHERE i.id = ? AND i.deleted_at IS NULL;";
     Statement statement(m_database.handle(), kSql, error);
     if (!statement.ok() || !bindText(statement.get(), 1, id, error))
         return false;
@@ -507,29 +540,36 @@ bool ItemRepository::get(const std::string &id, ItemRecord *item,
     record.createdAt = sqlite3_column_int64(statement.get(), 6);
     record.updatedAt = sqlite3_column_int64(statement.get(), 7);
 
-    const std::string dataId = columnText(statement.get(), 8);
-    const std::string dekId = columnText(statement.get(), 9);
-    const Bytes content = columnBytes(statement.get(), 10);
-    const Bytes nonce = columnBytes(statement.get(), 11);
-    const Bytes tag = columnBytes(statement.get(), 12);
-    if (dataId.empty() || dekId.empty() || content.empty() || nonce.size() != 12
-        || tag.size() != 16) {
-        setError(error, "encrypted item data is invalid");
-        return false;
-    }
+    if (record.classification == "C") {
+        record.payload = columnText(statement.get(), 8);
+    } else if (record.classification == "S") {
+        const std::string dataId = columnText(statement.get(), 9);
+        const std::string dekId = columnText(statement.get(), 10);
+        const Bytes content = columnBytes(statement.get(), 11);
+        const Bytes nonce = columnBytes(statement.get(), 12);
+        const Bytes tag = columnBytes(statement.get(), 13);
+        if (dataId.empty() || dekId.empty() || nonce.size() != 12
+            || tag.size() != 16) {
+            setError(error, "encrypted item data is invalid");
+            return false;
+        }
 
-    ProtectedValue dek;
-    if (!loadDek(m_database.handle(), dekId, m_kek, &dek, error))
-        return false;
+        ProtectedValue dek;
+        if (!loadDek(m_database.handle(), dekId, m_kek, &dek, error))
+            return false;
 
-    try {
-        Bytes plaintext = cryptowl::crypto::aesGcmDecrypt(
-            dek.span(), nonce, cryptowl::crypto::bytesOf(dataId), content, tag);
-        record.payload.assign(reinterpret_cast<const char *>(plaintext.data()),
-                              plaintext.size());
-        std::fill(plaintext.begin(), plaintext.end(), std::uint8_t{0});
-    } catch (const std::exception &) {
-        setError(error, "could not decrypt item");
+        try {
+            Bytes plaintext = cryptowl::crypto::aesGcmDecrypt(
+                dek.span(), nonce, cryptowl::crypto::bytesOf(dataId), content, tag);
+            record.payload.assign(reinterpret_cast<const char *>(plaintext.data()),
+                                  plaintext.size());
+            std::fill(plaintext.begin(), plaintext.end(), std::uint8_t{0});
+        } catch (const std::exception &) {
+            setError(error, "could not decrypt item");
+            return false;
+        }
+    } else {
+        setError(error, "unsupported item classification");
         return false;
     }
 
@@ -558,21 +598,31 @@ bool ItemRepository::create(const NewItem &item, std::string *id,
         setError(error, "item type and title are required");
         return false;
     }
-    if (item.classification != "S") {
-        setError(error, "only S-tier items are supported");
+    if (item.classification != "C" && item.classification != "S") {
+        setError(error, "unsupported item classification");
+        return false;
+    }
+    const bool secret = item.classification == "S";
+    if (secret && m_kek.size() != 32) {
+        setError(error, "vault key encryption key is unavailable");
         return false;
     }
 
     const std::string itemId = uuidV4();
-    const std::string dekId = uuidV4();
-    const std::string dataId = uuidV4();
-    const std::int64_t timestamp = nowMillis();
-    const ProtectedValue dek(cryptowl::crypto::randomBytes(32));
-
+    std::string dekId;
+    std::string dataId;
+    ProtectedValue dek;
     EncryptedData encrypted;
-    if (!encryptPayload(dek.span(), dataId, item.payload, &encrypted, error))
-        return false;
 
+    if (secret) {
+        dekId = uuidV4();
+        dataId = uuidV4();
+        dek = ProtectedValue(cryptowl::crypto::randomBytes(32));
+        if (!encryptPayload(dek.span(), dataId, item.payload, &encrypted, error))
+            return false;
+    }
+
+    const std::int64_t timestamp = nowMillis();
     if (!execute(m_database.handle(), "BEGIN IMMEDIATE;", error))
         return false;
 
@@ -581,12 +631,17 @@ bool ItemRepository::create(const NewItem &item, std::string *id,
         execute(m_database.handle(), "ROLLBACK;", &ignored);
     };
 
-    if (!insertDek(m_database.handle(), dekId, m_kek, dek.span(), timestamp, error)
-        || !insertEncryptedData(m_database.handle(), dataId, dekId, encrypted,
-                                timestamp, error)
-        || !insertItem(m_database.handle(), itemId, item, dataId, timestamp, error)
+    if ((secret
+         && (!insertDek(m_database.handle(), dekId, m_kek, dek.span(), timestamp,
+                        error)
+             || !insertEncryptedData(m_database.handle(), dataId, dekId, encrypted,
+                                     timestamp, error)))
+        || !insertItem(m_database.handle(), itemId, item,
+                       secret ? std::string() : item.payload, dataId, timestamp,
+                       error)
         || !insertVersion(m_database.handle(), itemId, 1, item.classification,
-                          item.title, dataId, item.meta,
+                          item.title, secret ? std::string() : item.payload, dataId,
+                          item.meta,
                           fingerprint(m_hfk, item.title, item.classification,
                                       item.payload),
                           timestamp, error)) {
@@ -610,10 +665,6 @@ bool ItemRepository::update(const std::string &id, const ItemUpdate &item,
         setError(error, "database is not open");
         return false;
     }
-    if (m_kek.size() != 32) {
-        setError(error, "vault key encryption key is unavailable");
-        return false;
-    }
     if (item.title.empty()) {
         setError(error, "item title is required");
         return false;
@@ -628,13 +679,14 @@ bool ItemRepository::update(const std::string &id, const ItemUpdate &item,
     };
 
     static constexpr const char *kSql =
-        "SELECT i.classification, i.encrypted_data_id, e.dek_id "
+        "SELECT i.classification, i.content, i.encrypted_data_id, e.dek_id "
         "FROM t_item i "
-        "JOIN t_encrypted_data e ON e.id = i.encrypted_data_id "
-        "WHERE i.id = ? AND i.deleted_at IS NULL AND e.deleted_at IS NULL;";
-    std::string classification;
-    std::string oldDataId;
-    std::string dekId;
+        "LEFT JOIN t_encrypted_data e "
+        "  ON e.id = i.encrypted_data_id AND e.deleted_at IS NULL "
+        "WHERE i.id = ? AND i.deleted_at IS NULL;";
+    std::string currentClassification;
+    std::string currentDataId;
+    std::string currentDekId;
     {
         Statement statement(m_database.handle(), kSql, error);
         if (!statement.ok() || !bindText(statement.get(), 1, id, error)) {
@@ -652,24 +704,39 @@ bool ItemRepository::update(const std::string &id, const ItemUpdate &item,
             return false;
         }
 
-        classification = columnText(statement.get(), 0);
-        oldDataId = columnText(statement.get(), 1);
-        dekId = columnText(statement.get(), 2);
+        currentClassification = columnText(statement.get(), 0);
+        currentDataId = columnText(statement.get(), 2);
+        currentDekId = columnText(statement.get(), 3);
     }
-    if (oldDataId.empty() || dekId.empty() || classification != "S") {
+
+    if (currentClassification != "C" && currentClassification != "S") {
         rollback();
-        setError(error, "unsupported item data");
+        setError(error, "unsupported item classification");
+        return false;
+    }
+    if (currentClassification == "S"
+        && (currentDataId.empty() || currentDekId.empty())) {
+        rollback();
+        setError(error, "encrypted item data is invalid");
         return false;
     }
 
-    ProtectedValue dek;
-    if (!loadDek(m_database.handle(), dekId, m_kek, &dek, error)) {
+    const std::string desiredClassification =
+        item.classification.empty() ? currentClassification : item.classification;
+    if (desiredClassification != "C" && desiredClassification != "S") {
         rollback();
+        setError(error, "unsupported item classification");
+        return false;
+    }
+    const bool desiredSecret = desiredClassification == "S";
+    if (desiredSecret && m_kek.size() != 32) {
+        rollback();
+        setError(error, "vault key encryption key is unavailable");
         return false;
     }
 
     const std::string newFingerprint =
-        fingerprint(m_hfk, item.title, classification, item.payload);
+        fingerprint(m_hfk, item.title, desiredClassification, item.payload);
     int seq = 0;
     std::string previousFingerprint;
     if (!latestVersion(m_database.handle(), id, &seq, &previousFingerprint, error)) {
@@ -684,27 +751,71 @@ bool ItemRepository::update(const std::string &id, const ItemUpdate &item,
         return true;
     }
 
-    const std::string dataId = uuidV4();
     const std::int64_t timestamp = nowMillis();
+    std::string dekId;
+    std::string dataId;
+    std::string content;
+    ProtectedValue dek;
     EncryptedData encrypted;
-    if (!encryptPayload(dek.span(), dataId, item.payload, &encrypted, error)
-        || !insertEncryptedData(m_database.handle(), dataId, dekId, encrypted,
-                                timestamp, error)) {
-        rollback();
-        return false;
+
+    if (desiredSecret) {
+        if (currentClassification == "S") {
+            dekId = currentDekId;
+            if (!loadDek(m_database.handle(), dekId, m_kek, &dek, error)) {
+                rollback();
+                return false;
+            }
+        } else {
+            dekId = uuidV4();
+            dek = ProtectedValue(cryptowl::crypto::randomBytes(32));
+            if (!insertDek(m_database.handle(), dekId, m_kek, dek.span(), timestamp,
+                           error)) {
+                rollback();
+                return false;
+            }
+        }
+
+        dataId = uuidV4();
+        if (!encryptPayload(dek.span(), dataId, item.payload, &encrypted, error)
+            || !insertEncryptedData(m_database.handle(), dataId, dekId, encrypted,
+                                    timestamp, error)) {
+            rollback();
+            return false;
+        }
+    } else {
+        content = item.payload;
     }
 
     static constexpr const char *kUpdateSql =
-        "UPDATE t_item SET title = ?, meta = ?, encrypted_data_id = ?, "
-        "updated_at = ? WHERE id = ? AND deleted_at IS NULL;";
+        "UPDATE t_item SET title = ?, classification = ?, content = ?, "
+        "encrypted_data_id = ?, meta = ?, updated_at = ? "
+        "WHERE id = ? AND deleted_at IS NULL;";
     {
         Statement updateStatement(m_database.handle(), kUpdateSql, error);
         if (!updateStatement.ok()
             || !bindText(updateStatement.get(), 1, item.title, error)
-            || !bindText(updateStatement.get(), 2, item.meta, error)
-            || !bindText(updateStatement.get(), 3, dataId, error)
-            || sqlite3_bind_int64(updateStatement.get(), 4, timestamp) != SQLITE_OK
-            || !bindText(updateStatement.get(), 5, id, error)
+            || !bindText(updateStatement.get(), 2, desiredClassification, error)) {
+            rollback();
+            return false;
+        }
+
+        if (desiredSecret) {
+            if (sqlite3_bind_null(updateStatement.get(), 3) != SQLITE_OK
+                || !bindText(updateStatement.get(), 4, dataId, error)) {
+                rollback();
+                return false;
+            }
+        } else {
+            if (!bindText(updateStatement.get(), 3, content, error)
+                || sqlite3_bind_null(updateStatement.get(), 4) != SQLITE_OK) {
+                rollback();
+                return false;
+            }
+        }
+
+        if (!bindText(updateStatement.get(), 5, item.meta, error)
+            || sqlite3_bind_int64(updateStatement.get(), 6, timestamp) != SQLITE_OK
+            || !bindText(updateStatement.get(), 7, id, error)
             || updateStatement.step(error) != SQLITE_DONE
             || sqlite3_changes(m_database.handle()) != 1) {
             rollback();
@@ -713,9 +824,9 @@ bool ItemRepository::update(const std::string &id, const ItemUpdate &item,
         }
     }
 
-    if (!insertVersion(m_database.handle(), id, seq + 1, classification,
-                       item.title, dataId, item.meta, newFingerprint, timestamp,
-                       error)) {
+    if (!insertVersion(m_database.handle(), id, seq + 1, desiredClassification,
+                       item.title, content, dataId, item.meta, newFingerprint,
+                       timestamp, error)) {
         rollback();
         return false;
     }
