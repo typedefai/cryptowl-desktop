@@ -103,3 +103,15 @@ add_test(NAME tst_noteeditordialog COMMAND tst_noteeditordialog)
 set_tests_properties(tst_noteeditordialog PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
+
+qt_add_executable(tst_topsecret
+    tst_topsecret.cpp
+)
+
+target_link_libraries(tst_topsecret PRIVATE cryptowl_ui Qt6::Test)
+
+add_test(NAME tst_topsecret COMMAND tst_topsecret)
+
+set_tests_properties(tst_topsecret PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)

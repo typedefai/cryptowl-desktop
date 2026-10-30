@@ -13,6 +13,10 @@ class QStackedWidget;
 class QTextBrowser;
 class QTreeWidget;
 
+namespace cryptowl::crypto {
+class ProtectedValue;
+}
+
 namespace cryptowl::vault {
 class VaultSession;
 }
@@ -37,6 +41,7 @@ public:
     void editSelectedEntry();
     void deleteSelectedEntry();
     void copySelectedUsername();
+    void setupTopSecret();
 
 signals:
     void statusMessage(const QString &message);
@@ -63,6 +68,9 @@ private:
     void showContextMenu(QAbstractItemView *view, const QPoint &pos);
     void editSelectedPassword();
     void editSelectedNote();
+    bool topSecretConfigured() const;
+    bool authorizeTopSecret(cryptowl::crypto::ProtectedValue *topSecretKek,
+                            QString *error);
     QString selectedId() const;
     void selectItem(const QString &id);
     const ItemRow *rowForId(const QString &id) const;

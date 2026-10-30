@@ -100,6 +100,14 @@ void MainWindow::createActions()
         style()->standardIcon(QStyle::SP_MessageBoxInformation), tr("Vault &info…"), this);
     connect(m_vaultInfoAction, &QAction::triggered, this, &MainWindow::showVaultInfo);
 
+    m_topSecretAction = new QAction(
+        style()->standardIcon(QStyle::SP_DialogApplyButton),
+        tr("Set up &Top Secret…"), this);
+    connect(m_topSecretAction, &QAction::triggered, this, [this] {
+        if (auto *view = currentVaultView())
+            view->setupTopSecret();
+    });
+
     m_addEntryAction = new QAction(
         style()->standardIcon(QStyle::SP_FileIcon), tr("&New password…"), this);
     connect(m_addEntryAction, &QAction::triggered, this, [this] {
@@ -158,6 +166,7 @@ void MainWindow::createMenus()
     fileMenu->addSeparator();
     fileMenu->addAction(m_lockVaultAction);
     fileMenu->addAction(m_vaultInfoAction);
+    fileMenu->addAction(m_topSecretAction);
     fileMenu->addSeparator();
 
     QAction *quitAction = fileMenu->addAction(tr("E&xit"));
@@ -391,9 +400,9 @@ void MainWindow::updateWorkspaceActions()
 {
     const bool hasVault = currentVaultView() != nullptr;
     const QList<QAction *> actions = {
-        m_lockVaultAction, m_vaultInfoAction, m_addEntryAction, m_addNoteAction,
-        m_editEntryAction, m_deleteEntryAction, m_copyUsernameAction,
-        m_detailsAction, m_iconsAction,
+        m_lockVaultAction, m_vaultInfoAction, m_topSecretAction, m_addEntryAction,
+        m_addNoteAction, m_editEntryAction, m_deleteEntryAction,
+        m_copyUsernameAction, m_detailsAction, m_iconsAction,
     };
     for (QAction *action : actions)
         action->setEnabled(hasVault);

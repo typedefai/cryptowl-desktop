@@ -136,6 +136,7 @@ std::string columnText(sqlite3_stmt *statement, int index)
 bool storeKek(VaultDatabase &database, std::span<const std::uint8_t> smk,
               ProtectedValue *kek, std::string *error)
 {
+    CRYPTOWL_TRACE_NOTE("wrap KEK with SMK and store");
     const auto wrappingKey = smk.first(32);
     const Bytes nonce = cryptowl::crypto::randomBytes(12);
     GcmCiphertext wrapped;
@@ -209,6 +210,7 @@ bool loadOrCreateKek(VaultDatabase &database, std::span<const std::uint8_t> smk,
         return false;
     }
 
+    CRYPTOWL_TRACE_NOTE("load wrapped KEK (role=kek, wrapper=smk)");
     static constexpr const char *kSql =
         "SELECT role, wrapper, algorithm, ciphertext, nonce, auth_tag, deleted_at "
         "FROM t_wrapped_key WHERE id = ?;";
@@ -246,6 +248,7 @@ bool loadOrCreateKek(VaultDatabase &database, std::span<const std::uint8_t> smk,
             setError(error, "invalid wrapped key encryption key");
             return false;
         }
+        CRYPTOWL_TRACE_NOTE("unwrap KEK with SMK[0:32]");
         try {
             Bytes plaintext = cryptowl::crypto::aesGcmDecrypt(
                 smk.first(32), nonce, cryptowl::crypto::bytesOf(kKekId), ciphertext,
@@ -264,6 +267,7 @@ bool loadOrCreateKek(VaultDatabase &database, std::span<const std::uint8_t> smk,
     }
 
     *kek = ProtectedValue(cryptowl::crypto::randomBytes(32));
+    CRYPTOWL_TRACE_NOTE("create new KEK");
     return storeKek(database, smk, kek, error);
 }
 
@@ -286,6 +290,7 @@ std::unique_ptr<VaultSession> VaultSession::open(const std::string &databasePath
     }
 
     auto session = std::unique_ptr<VaultSession>(new VaultSession());
+    CRYPTOWL_TRACE_NOTE("open vault session");
     if (!session->m_database.open(databasePath, vaultKey.span(), error))
         return nullptr;
 
@@ -293,6 +298,7 @@ std::unique_ptr<VaultSession> VaultSession::open(const std::string &databasePath
     if (!loadOrCreateKek(session->m_database, smk.span(), &kek, error))
         return nullptr;
 
+    CRYPTOWL_TRACE_NOTE("vault session ready (KEK and VaultKey loaded)");
     CRYPTOWL_TRACE_SECRET("key.kek", kek.span());
     CRYPTOWL_TRACE_SECRET("key.vault_key", vaultKey.span());
 

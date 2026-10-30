@@ -63,9 +63,16 @@ public:
               std::string *error = nullptr) const;
     bool get(const std::string &id, ItemRecord *item,
              std::string *error = nullptr) const;
+    bool get(const std::string &id, std::span<const std::uint8_t> topSecretKek,
+             ItemRecord *item, std::string *error = nullptr) const;
     bool create(const NewItem &item, std::string *id,
                 std::string *error = nullptr);
+    bool create(const NewItem &item, std::span<const std::uint8_t> topSecretKek,
+                std::string *id, std::string *error = nullptr);
     bool update(const std::string &id, const ItemUpdate &item,
+                std::string *error = nullptr);
+    bool update(const std::string &id, const ItemUpdate &item,
+                std::span<const std::uint8_t> topSecretKek,
                 std::string *error = nullptr);
     bool softDelete(const std::string &id, std::string *error = nullptr);
 

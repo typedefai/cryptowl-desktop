@@ -123,6 +123,7 @@ VaultCreator::Result VaultCreator::create(const QString &vaultPath,
     if (password.isEmpty())
         return failure(QStringLiteral("The master password must not be empty."));
 
+    CRYPTOWL_TRACE_NOTE("create vault " + vaultId.toStdString());
     Bytes argon2Salt = randomBytes(32);
     Bytes hkdfSalt = randomBytes(32);
     ProtectedValue deviceSecret(randomBytes(32));
@@ -139,11 +140,14 @@ VaultCreator::Result VaultCreator::create(const QString &vaultPath,
 
     ProtectedValue passwordKey(hmacSha256(deviceSecret.span(), passwordSpan));
 
+    CRYPTOWL_TRACE_NOTE("derive P = HMAC-SHA256(device_secret, master_password)");
     Argon2Params params;
     params.memoryKib = kKdfMemoryKib;
     params.iterations = kKdfIterations;
     params.parallelism = kKdfParallelism;
     ProtectedValue tmk(argon2id(passwordKey.span(), argon2Salt, params));
+
+    CRYPTOWL_TRACE_NOTE("derive TMK = Argon2id(P, argon2_salt)");
     ProtectedValue smk(hkdfSha256(
         tmk.span(), hkdfSalt,
         bytesOf(std::string_view(vaultIdUtf8.constData(),
@@ -151,6 +155,8 @@ VaultCreator::Result VaultCreator::create(const QString &vaultPath,
         64));
     if (smk.size() != 64)
         return failure(QStringLiteral("Could not derive the vault key."));
+
+    CRYPTOWL_TRACE_NOTE("derive SMK = HKDF-SHA256(TMK, hkdf_salt, vault_id, 64)");
 
     CRYPTOWL_TRACE_SECRET_TEXT(
         "kdf.params",
@@ -170,6 +176,7 @@ VaultCreator::Result VaultCreator::create(const QString &vaultPath,
 
     const auto wrappingKey = std::span<const std::uint8_t>(smk.span().data(), 32);
     const auto macKey = std::span<const std::uint8_t>(smk.span().data() + 32, 32);
+    CRYPTOWL_TRACE_NOTE("wrap VaultKey with SMK[0:32]");
     const GcmCiphertext wrapped = aesGcmEncrypt(
         wrappingKey, nonce, bytesOf("vault_key:smk"), vaultKey.span(),
         "vault_key.wrap.smk");
@@ -245,6 +252,7 @@ VaultCreator::Result VaultCreator::create(const QString &vaultPath,
     };
 
     QString writeError;
+    CRYPTOWL_TRACE_NOTE("write vault.meta and config signature");
     if (!writeFile(paths[0], configJson, &writeError)) {
         return failAndCleanup(
             QStringLiteral("Could not write config.json: %1").arg(writeError));
@@ -289,6 +297,7 @@ VaultCreator::Result VaultCreator::create(const QString &vaultPath,
     }
 
     QString secretError;
+    CRYPTOWL_TRACE_NOTE("store device secret in secure storage");
     if (!writer(vaultId, argon2Salt, deviceSecret.span(), &secretError)) {
         return failAndCleanup(QStringLiteral("Could not store the device secret: %1")
                                   .arg(secretError));

@@ -29,7 +29,7 @@ interop beyond the vault format itself.
 | D3 | HKDF | own RFC 5869 implementation over HMAC-SHA256 | mirrors the reference line-by-line (incl. empty-salt → 32 zero bytes); trivial and vector-locked |
 | D4 | SQLCipher | SQLCipher 5.0.0-beta.1 vendored amalgamation with the OpenSSL 3.5.8 LTS provider (developer-installed) | v5 AES-256-GCM/page-size defaults, no v4 compatibility; package a compatible OpenSSL runtime; raw key expression `x'<hex>'` only |
 | D5 | UX | password-manager layout: sidebar (type filters + pinned) + search-as-you-type + item list + detail/editor | 1Password/Bitwarden pattern; `items.md`'s Explorer style stays the dev-tooling pattern |
-| D6 | Tiers on desktop | C = vault unlock; S = per-item DEK, KEK **dev-bound** to SMK and kept for the unlocked session (per-reveal re-prompt pending); T = secondary password (Argon2id → TS-KEK → TopSecretKEK) | no biometrics on desktop; matches `items.md` dev binding and `design.md` semantics |
+| D6 | Tiers on desktop | C = vault unlock; S = per-item DEK, KEK **dev-bound** to SMK and kept for the unlocked session (per-reveal re-prompt pending); T = secondary password (Argon2id → TS-KEK → TopSecretKEK), re-entered per T access; setup re-enters the master password; no biometrics | matches `items.md` dev binding and `design.md` semantics; desktop T is a second password, not two-factor |
 | D7 | Device secret | QtKeychain (macOS Keychain, Windows Credential Store, Linux Secret Service); legacy `<vault>/device_secret` (32 raw / 64 hex) migrated on first unlock | cross-platform secure-store analog to Android Keystore |
 | D8 | Byte-exactness | golden vectors pinned in tests; HMAC order `P = HMAC(key=DeviceSecret, msg=password)` | the cross-verification contract with Android/vaultlib |
 
@@ -38,7 +38,7 @@ interop beyond the vault format itself.
 ```
 cryptowl_core   static lib, no Qt   — crypto primitives, vault format, repositories
 cryptowl_ui     static lib, Qt      — views, dialogs, viewmodels
-cryptowl-desktop executable         — thin main()
+cryptowl executable             — thin main()
 third_party/    mbedTLS (FetchContent, pinned), argon2 (vendored)
 ```
 
@@ -86,10 +86,13 @@ logged.
 ### P3 — Item model ◐
 
 - ✅ `ItemRepository`: list/get/create/update/soft-delete over `t_item` for
-  S-tier passwords and C/S notes; pin/tree/type-registry expansion pending
+  C/S/T items; pin/tree/type-registry expansion pending
 - ✅ S-tier plumbing: `t_data_encrypt_key` + `t_encrypted_data`, DEK per item,
   KEK dev binding (`t_wrapped_key` role=kek wrapper=smk), AAD = record id
-- ◐ T tier: secondary password setup, TS-KEK, TopSecretKEK wrap/unwrap
+- ✅ T tier: secondary-password setup, `secondarySalt` + `vault.meta` MAC
+  re-sign, TS-KEK derivation, TopSecretKEK wrap/unwrap
+  (`t_wrapped_key` role=top_secret_kek wrapper=ts_kek), T DEKs and per-access
+  prompts; secondary-password rotation and T history restore pending
 - ◐ History: fingerprint (`HMAC(HFK, title \0 classification \0 payload)`),
   create/update version rows, and unchanged-save suppression; retention
   (default 100), restore, and diff UI pending
@@ -119,11 +122,20 @@ logged.
   Argon2id parameters, key states, wrapped-key metadata, salts, and files;
   key material and wrapped ciphertext are never displayed
 - Browser: sidebar + filter/search + list + detail; C/S/T badges; empty states
-- ✅ Note editor (C by default, S optional): title + text, confidential/secret
-  level switcher, create/edit/soft-delete; markdown preview pending
-- ◐ Password editor (S): username/url/secret/notes JSON payload, show/hide,
-  create/edit/soft-delete; KEK is session-scoped, generator and per-reveal
-  master-password re-prompt pending; password is never copied
+- ✅ Note editor (C by default, S/T optional): title + text, confidentiality
+  switcher, create/edit/soft-delete; the bottom pane is metadata-only, while
+  S/T content is lazy-loaded in the editor until **Show content** (T also
+  requires the secondary password); C content is shown directly in the editor;
+  markdown preview pending
+- ◐ Password editor (S/T): username/url/secret/notes JSON payload, show/hide,
+  create/edit/soft-delete; the bottom pane is metadata-only, and the editor
+  does not decrypt until **Show password and notes**; T prompts for the
+  secondary password on every reveal and save; KEK is session-scoped,
+  generator and per-reveal master-password re-prompt pending; password is
+  never copied
+- ✅ Top Secret setup action: re-enter the master password, set a secondary
+  password, add `secondarySalt`, re-sign `vault.meta`, and wrap a random
+  TopSecretKEK; no recovery and no biometric factor on desktop
 - History panel: version list, messages, text diff, restore
 - Exit: manual walkthrough of goals 1–5
 

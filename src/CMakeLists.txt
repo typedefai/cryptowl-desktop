@@ -11,6 +11,10 @@ qt_add_library(cryptowl_ui STATIC
     PasswordEditorDialog.cpp
     RecentVaultsStore.h
     RecentVaultsStore.cpp
+    TopSecretService.h
+    TopSecretService.cpp
+    TopSecretDialog.h
+    TopSecretDialog.cpp
     UnlockVaultDialog.h
     UnlockVaultDialog.cpp
     VaultCreator.h
@@ -31,11 +35,11 @@ qt_add_library(cryptowl_ui STATIC
 target_include_directories(cryptowl_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(cryptowl_ui PUBLIC Qt6::Widgets cryptowl_core PRIVATE qt6keychain)
 
-qt_add_executable(cryptowl-desktop
+qt_add_executable(cryptowl
     main.cpp
 )
 
-qt_add_resources(cryptowl-desktop "app_fonts"
+qt_add_resources(cryptowl "app_fonts"
     PREFIX "/fonts"
     BASE "${PROJECT_SOURCE_DIR}/assets/fonts"
     FILES
@@ -43,19 +47,19 @@ qt_add_resources(cryptowl-desktop "app_fonts"
         "${PROJECT_SOURCE_DIR}/assets/fonts/selawkb.ttf"
 )
 
-target_compile_definitions(cryptowl-desktop PRIVATE
+target_compile_definitions(cryptowl PRIVATE
     CRYPTOWL_VERSION="${PROJECT_VERSION}"
 )
 
-target_link_libraries(cryptowl-desktop PRIVATE cryptowl_ui)
+target_link_libraries(cryptowl PRIVATE cryptowl_ui)
 
 # Build a plain executable rather than a macOS .app bundle, so it can be
 # launched directly from the build tree.
-set_target_properties(cryptowl-desktop PROPERTIES
+set_target_properties(cryptowl PROPERTIES
     WIN32_EXECUTABLE TRUE
     MACOSX_BUNDLE FALSE
 )
 
-install(TARGETS cryptowl-desktop
+install(TARGETS cryptowl
     RUNTIME DESTINATION bin
 )

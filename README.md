@@ -92,7 +92,7 @@ cmake -S . -B build/trace -G Ninja \
   -DCRYPTOWL_TRACE_CRYPTO=ON
 cmake --build build/trace
 
-build/trace/src/cryptowl-desktop 2>crypto.log
+build/trace/src/cryptowl 2>crypto.log
 ```
 
 The trace includes:
@@ -104,10 +104,13 @@ The trace includes:
 - Item IDs, data IDs, DEK IDs, type, classification, and payload text/hex
 - SQLCipher raw key and an example CLI command
 
-Each AEAD operation is printed as one block, with inputs and outputs aligned
-under the operation and hex grouped into 4-byte words:
+High-level steps are marked with `>>` lines: SQLCipher open/create, key
+derivation, KEK/DEK unwrap, payload encryption/decryption, and item
+read/write. Each AEAD operation is then printed as one block, with inputs and
+outputs aligned under the operation and hex grouped into 4-byte words:
 
 ```text
+[cryptowl:crypto] >> unwrap KEK with SMK[0:32]
 [cryptowl:crypto] +- AES-256-GCM decrypt  kek.unwrap.smk
 [cryptowl:crypto] |  key             32 B  00112233 44556677 8899aabb ccddeeff
 [cryptowl:crypto] |                        00112233 44556677 8899aabb ccddeeff
@@ -119,6 +122,7 @@ under the operation and hex grouped into 4-byte words:
 [cryptowl:crypto] |                        aabbccdd eeff0011 22334455 66778899
 [cryptowl:crypto] |  tag             16 B  10203040 50607080 90a0b0c0 d0e0f000
 [cryptowl:crypto] +- ok
+[cryptowl:crypto] >> vault session ready (KEK and VaultKey loaded)
 ```
 
 Lines are colored when stderr is a terminal. `CRYPTOWL_TRACE_COLOR=always`

@@ -93,6 +93,7 @@ class TestItemRepository : public QObject
 private slots:
     void crudRoundTrip();
     void noteTierRoundTrip();
+    void topSecretRoundTrip();
     void preservesItemsAcrossSessions();
     void rejectsWrongSmk();
 };
@@ -219,6 +220,67 @@ void TestItemRepository::noteTierRoundTrip()
     QVERIFY2(repository.get(emptyId, &emptyRecord, &error), error.c_str());
     QCOMPARE(QString::fromStdString(emptyRecord.classification), QStringLiteral("S"));
     QVERIFY(emptyRecord.payload.empty());
+}
+
+void TestItemRepository::topSecretRoundTrip()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString databasePath = dir.filePath(QStringLiteral("vault.db"));
+    QVERIFY(VaultDatabase::create(databasePath.toStdString(), kVaultKey));
+
+    std::string error;
+    auto session = openSession(databasePath, kSmk, &error);
+    QVERIFY2(session != nullptr, error.c_str());
+    ItemRepository &repository = session->items();
+
+    const Bytes topSecretKek(32, 0x77);
+    const Bytes wrongKek(32, 0x88);
+
+    NewItem item = noteItem("Top", "top secret body", "T");
+    std::string id;
+    QVERIFY2(!repository.create(item, &id, &error), "T must require a key");
+    QVERIFY2(repository.create(item, topSecretKek, &id, &error), error.c_str());
+
+    ItemRecord record;
+    QVERIFY(!repository.get(id, &record, &error));
+    QVERIFY(error.find("locked") != std::string::npos);
+    QVERIFY2(repository.get(id, topSecretKek, &record, &error), error.c_str());
+    QCOMPARE(QString::fromStdString(record.payload), QStringLiteral("top secret body"));
+    QVERIFY(!repository.get(id, wrongKek, &record, &error));
+
+    ItemUpdate update;
+    update.title = "Top updated";
+    update.classification = "T";
+    update.meta = "{}";
+    update.payload = "updated top secret";
+    QVERIFY2(repository.update(id, update, topSecretKek, &error), error.c_str());
+    QVERIFY2(repository.get(id, topSecretKek, &record, &error), error.c_str());
+    QCOMPARE(QString::fromStdString(record.payload),
+             QStringLiteral("updated top secret"));
+    QCOMPARE(scalarInt(session->handle(),
+                       "SELECT count(*) FROM t_item_version;"),
+             2);
+
+    std::string secretId;
+    QVERIFY2(repository.create(noteItem("Secret", "secret body", "S"), &secretId,
+                               &error),
+             error.c_str());
+    update.title = "Secret scaled";
+    update.classification = "T";
+    update.payload = "secret now top";
+    QVERIFY2(repository.update(secretId, update, topSecretKek, &error), error.c_str());
+    QVERIFY2(repository.get(secretId, topSecretKek, &record, &error), error.c_str());
+    QCOMPARE(QString::fromStdString(record.payload),
+             QStringLiteral("secret now top"));
+
+    update.title = "Top downgraded";
+    update.classification = "S";
+    update.payload = "top now secret";
+    QVERIFY2(repository.update(id, update, topSecretKek, &error), error.c_str());
+    QVERIFY2(repository.get(id, &record, &error), error.c_str());
+    QCOMPARE(QString::fromStdString(record.payload),
+             QStringLiteral("top now secret"));
 }
 
 void TestItemRepository::preservesItemsAcrossSessions()

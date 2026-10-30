@@ -2,6 +2,7 @@
 
 #include <QCheckBox>
 #include <QColor>
+#include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QLabel>
@@ -9,7 +10,11 @@
 #include <QPalette>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QSignalBlocker>
+#include <QStandardItemModel>
 #include <QVBoxLayout>
+
+#include <utility>
 
 PasswordEditorDialog::PasswordEditorDialog(QWidget *parent)
     : QDialog(parent)
@@ -18,14 +23,44 @@ PasswordEditorDialog::PasswordEditorDialog(QWidget *parent)
 }
 
 PasswordEditorDialog::PasswordEditorDialog(const Data &data, QWidget *parent)
+    : PasswordEditorDialog(data, SecretLoader(), parent)
+{
+}
+
+PasswordEditorDialog::PasswordEditorDialog(const Data &data, SecretLoader loader,
+                                           QWidget *parent)
     : QDialog(parent)
+    , m_secretLoader(std::move(loader))
 {
     buildUi(true);
     m_titleEdit->setText(data.title);
     m_usernameEdit->setText(data.username);
     m_urlEdit->setText(data.url);
-    m_passwordEdit->setText(data.password);
-    m_notesEdit->setPlainText(data.notes);
+    const int classificationIndex =
+        m_classificationCombo->findData(data.classification);
+    m_classificationCombo->setCurrentIndex(classificationIndex >= 0
+                                               ? classificationIndex
+                                               : 0);
+
+    if (m_secretLoader) {
+        m_secretRevealed = false;
+        m_passwordEdit->setText(QStringLiteral("••••••••••••"));
+        m_passwordEdit->setEnabled(false);
+        m_notesEdit->setPlainText(QStringLiteral(
+            "••••••••••••••••••••••••••••••••\n"
+            "••••••••••••••••••••••••••••••••"));
+        m_notesEdit->setEnabled(false);
+        m_showPassword->setText(tr("Show password and notes"));
+        m_lockHint->show();
+        m_saveButton->setEnabled(false);
+    } else {
+        m_secretRevealed = true;
+        m_passwordEdit->setText(data.password);
+        m_notesEdit->setPlainText(data.notes);
+        m_lockHint->hide();
+        m_saveButton->setEnabled(true);
+    }
+
     m_titleEdit->selectAll();
     m_titleEdit->setFocus();
 }
@@ -38,7 +73,29 @@ PasswordEditorDialog::Data PasswordEditorDialog::data() const
     result.url = m_urlEdit->text().trimmed();
     result.password = m_passwordEdit->text();
     result.notes = m_notesEdit->toPlainText();
+    result.classification = m_classificationCombo->currentData().toString();
+    if (result.classification.isEmpty())
+        result.classification = QStringLiteral("S");
     return result;
+}
+
+void PasswordEditorDialog::setTopSecretAvailable(bool available)
+{
+    const int index = m_classificationCombo->findData(QStringLiteral("T"));
+    if (index < 0)
+        return;
+    if (auto *model =
+            qobject_cast<QStandardItemModel *>(m_classificationCombo->model())) {
+        if (auto *item = model->item(index))
+            item->setEnabled(available);
+    }
+    if (m_topSecretHint)
+        m_topSecretHint->setVisible(!available);
+}
+
+void PasswordEditorDialog::setSaveAuthorizer(SaveAuthorizer authorizer)
+{
+    m_saveAuthorizer = std::move(authorizer);
 }
 
 void PasswordEditorDialog::buildUi(bool editing)
@@ -78,6 +135,13 @@ void PasswordEditorDialog::buildUi(bool editing)
     m_showPassword = new QCheckBox(tr("Show password"), passwordRow);
     m_showPassword->setObjectName(QStringLiteral("passwordShow"));
     connect(m_showPassword, &QCheckBox::toggled, this, [this](bool checked) {
+        if (checked && !m_secretRevealed) {
+            if (!revealSecretFields()) {
+                QSignalBlocker blocker(m_showPassword);
+                m_showPassword->setChecked(false);
+                return;
+            }
+        }
         m_passwordEdit->setEchoMode(checked ? QLineEdit::Normal : QLineEdit::Password);
     });
     passwordLayout->addWidget(m_showPassword);
@@ -86,12 +150,43 @@ void PasswordEditorDialog::buildUi(bool editing)
     m_notesEdit->setObjectName(QStringLiteral("passwordNotes"));
     m_notesEdit->setMinimumHeight(90);
 
+    m_classificationCombo = new QComboBox(this);
+    m_classificationCombo->setObjectName(QStringLiteral("passwordClassification"));
+    m_classificationCombo->addItem(tr("Secret (S)"), QStringLiteral("S"));
+    m_classificationCombo->addItem(tr("Top Secret (T)"), QStringLiteral("T"));
+
     form->addRow(tr("Title:"), m_titleEdit);
     form->addRow(tr("User name:"), m_usernameEdit);
     form->addRow(tr("URL:"), m_urlEdit);
     form->addRow(tr("Password:"), passwordRow);
     form->addRow(tr("Notes:"), m_notesEdit);
+    form->addRow(tr("Confidentiality:"), m_classificationCombo);
     layout->addLayout(form);
+
+    auto *classificationHelp = new QLabel(
+        tr("Secret passwords use the vault's item key. "
+           "Top Secret passwords require the secondary password for every "
+           "access."),
+        this);
+    classificationHelp->setWordWrap(true);
+    layout->addWidget(classificationHelp);
+
+    m_topSecretHint = new QLabel(
+        tr("Top Secret is not set up yet. Use File → Set up Top Secret… first."),
+        this);
+    m_topSecretHint->setObjectName(QStringLiteral("passwordTopSecretHint"));
+    m_topSecretHint->setWordWrap(true);
+    m_topSecretHint->hide();
+    layout->addWidget(m_topSecretHint);
+
+    m_lockHint = new QLabel(
+        tr("The password and notes are hidden. Check Show password and notes "
+           "to reveal them."),
+        this);
+    m_lockHint->setObjectName(QStringLiteral("passwordLockHint"));
+    m_lockHint->setWordWrap(true);
+    m_lockHint->hide();
+    layout->addWidget(m_lockHint);
 
     m_errorLabel = new QLabel(this);
     m_errorLabel->setObjectName(QStringLiteral("passwordError"));
@@ -105,6 +200,7 @@ void PasswordEditorDialog::buildUi(bool editing)
     auto *buttons =
         new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, this);
     m_saveButton = buttons->button(QDialogButtonBox::Save);
+    m_saveButton->setObjectName(QStringLiteral("passwordSave"));
     m_saveButton->setText(tr("Save"));
     m_saveButton->setDefault(true);
     connect(buttons, &QDialogButtonBox::accepted, this, &PasswordEditorDialog::save);
@@ -116,10 +212,23 @@ void PasswordEditorDialog::buildUi(bool editing)
 
 void PasswordEditorDialog::save()
 {
+    if (!m_secretRevealed) {
+        setError(tr("Show the password before saving."));
+        return;
+    }
     if (m_titleEdit->text().trimmed().isEmpty()) {
         setError(tr("Enter a title for this password."));
         m_titleEdit->setFocus();
         return;
+    }
+
+    const Data current = data();
+    if (m_saveAuthorizer) {
+        QString error;
+        if (!m_saveAuthorizer(current, &error)) {
+            setError(error.isEmpty() ? tr("This save was not authorized.") : error);
+            return;
+        }
     }
 
     setError(QString());
@@ -130,7 +239,36 @@ void PasswordEditorDialog::save()
 void PasswordEditorDialog::reject()
 {
     m_passwordEdit->clear();
+    m_notesEdit->clear();
     QDialog::reject();
+}
+
+bool PasswordEditorDialog::revealSecretFields()
+{
+    if (m_secretRevealed || !m_secretLoader)
+        return true;
+
+    QString password;
+    QString notes;
+    QString error;
+    if (!m_secretLoader(&password, &notes, &error)) {
+        setError(error.isEmpty() ? tr("Could not decrypt this password.") : error);
+        return false;
+    }
+
+    m_passwordEdit->setText(password);
+    m_notesEdit->setPlainText(notes);
+    password.fill(QChar('\0'));
+    notes.fill(QChar('\0'));
+    m_passwordEdit->setEnabled(true);
+    m_notesEdit->setEnabled(true);
+    m_notesEdit->setPlaceholderText(QString());
+    m_showPassword->setText(tr("Show password"));
+    m_lockHint->hide();
+    m_secretRevealed = true;
+    m_saveButton->setEnabled(true);
+    setError(QString());
+    return true;
 }
 
 void PasswordEditorDialog::setError(const QString &message)

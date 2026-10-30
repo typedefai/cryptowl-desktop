@@ -172,9 +172,15 @@ std::string columnText(sqlite3_stmt *statement, int index)
 }
 
 bool loadDek(sqlite3 *db, const std::string &dekId,
-             std::span<const std::uint8_t> kek, ProtectedValue *dek,
+             std::span<const std::uint8_t> wrappingKey,
+             std::string_view context, ProtectedValue *dek,
              std::string *error)
 {
+    if (wrappingKey.size() != 32) {
+        setError(error, "item wrapping key is unavailable");
+        return false;
+    }
+    CRYPTOWL_TRACE_NOTE("read wrapped item DEK from t_data_encrypt_key");
     static constexpr const char *kSql =
         "SELECT algorithm, ciphertext, nonce, auth_tag "
         "FROM t_data_encrypt_key WHERE id = ?;";
@@ -204,9 +210,14 @@ bool loadDek(sqlite3 *db, const std::string &dekId,
     }
 
     try {
+        const bool topSecret =
+            context.find("top_secret") != std::string_view::npos;
+        CRYPTOWL_TRACE_NOTE(
+            topSecret ? "unwrap item DEK with TopSecretKEK"
+                      : "unwrap item DEK with KEK");
         Bytes plaintext = cryptowl::crypto::aesGcmDecrypt(
-            kek, nonce, cryptowl::crypto::bytesOf(dekId), ciphertext, tag,
-            "dek.unwrap.kek");
+            wrappingKey, nonce, cryptowl::crypto::bytesOf(dekId), ciphertext, tag,
+            context);
         if (plaintext.size() != 32) {
             cryptowl::crypto::secureWipe(plaintext);
             setError(error, "invalid unwrapped item key");
@@ -221,14 +232,24 @@ bool loadDek(sqlite3 *db, const std::string &dekId,
 }
 
 bool insertDek(sqlite3 *db, const std::string &dekId,
-               std::span<const std::uint8_t> kek, std::span<const std::uint8_t> dek,
-               std::int64_t timestamp, std::string *error)
+               std::span<const std::uint8_t> wrappingKey,
+               std::span<const std::uint8_t> dek, std::int64_t timestamp,
+               std::string_view context, std::string *error)
 {
+    if (wrappingKey.size() != 32) {
+        setError(error, "item wrapping key is unavailable");
+        return false;
+    }
     const Bytes nonce = cryptowl::crypto::randomBytes(12);
     GcmCiphertext wrapped;
     try {
+        const bool topSecret =
+            context.find("top_secret") != std::string_view::npos;
+        CRYPTOWL_TRACE_NOTE(
+            topSecret ? "wrap item DEK with TopSecretKEK"
+                      : "wrap item DEK with KEK");
         wrapped = cryptowl::crypto::aesGcmEncrypt(
-            kek, nonce, cryptowl::crypto::bytesOf(dekId), dek, "dek.wrap.kek");
+            wrappingKey, nonce, cryptowl::crypto::bytesOf(dekId), dek, context);
     } catch (const std::exception &) {
         setError(error, "could not wrap item key");
         return false;
@@ -503,10 +524,18 @@ bool ItemRepository::list(const std::string &type,
 bool ItemRepository::get(const std::string &id, ItemRecord *item,
                          std::string *error) const
 {
+    return get(id, std::span<const std::uint8_t>(), item, error);
+}
+
+bool ItemRepository::get(const std::string &id,
+                         std::span<const std::uint8_t> topSecretKek,
+                         ItemRecord *item, std::string *error) const
+{
     if (!item) {
         setError(error, "item destination is null");
         return false;
     }
+    CRYPTOWL_TRACE_NOTE("read item " + id);
     if (!m_database.handle()) {
         setError(error, "database is not open");
         return false;
@@ -543,10 +572,13 @@ bool ItemRepository::get(const std::string &id, ItemRecord *item,
     record.updatedAt = sqlite3_column_int64(statement.get(), 7);
 
     if (record.classification == "C") {
+        CRYPTOWL_TRACE_NOTE("read C-tier payload directly");
         record.payload = columnText(statement.get(), 8);
         CRYPTOWL_TRACE_SECRET_TEXT(
             "item.read.data", "id=" + record.id + " data_id=- dek_id=-");
-    } else if (record.classification == "S") {
+    } else if (record.classification == "S"
+               || record.classification == "T") {
+        const bool topSecret = record.classification == "T";
         const std::string dataId = columnText(statement.get(), 9);
         const std::string dekId = columnText(statement.get(), 10);
         const Bytes content = columnBytes(statement.get(), 11);
@@ -557,17 +589,27 @@ bool ItemRepository::get(const std::string &id, ItemRecord *item,
             setError(error, "encrypted item data is invalid");
             return false;
         }
+        if (topSecret && topSecretKek.size() != 32) {
+            CRYPTOWL_TRACE_NOTE("Top Secret content is locked (no secondary key)");
+            setError(error, "Top Secret content is locked");
+            return false;
+        }
 
         CRYPTOWL_TRACE_SECRET_TEXT(
             "item.read.data",
             "id=" + record.id + " data_id=" + dataId + " dek_id=" + dekId);
 
+        const auto wrappingKey = topSecret ? topSecretKek : m_kek;
+        const char *wrapContext =
+            topSecret ? "dek.unwrap.top_secret_kek" : "dek.unwrap.kek";
         ProtectedValue dek;
-        if (!loadDek(m_database.handle(), dekId, m_kek, &dek, error))
+        if (!loadDek(m_database.handle(), dekId, wrappingKey, wrapContext, &dek,
+                     error))
             return false;
         CRYPTOWL_TRACE_SECRET("item.dek", dek.span());
 
         try {
+            CRYPTOWL_TRACE_NOTE("decrypt item payload with AES-256-GCM");
             Bytes plaintext = cryptowl::crypto::aesGcmDecrypt(
                 dek.span(), nonce, cryptowl::crypto::bytesOf(dataId), content, tag,
                 "payload.decrypt.dek");
@@ -590,6 +632,7 @@ bool ItemRepository::get(const std::string &id, ItemRecord *item,
     CRYPTOWL_TRACE_SECRET_TEXT("item.payload", record.payload);
     CRYPTOWL_TRACE_SECRET("item.payload.hex",
                           cryptowl::crypto::bytesOf(record.payload));
+    CRYPTOWL_TRACE_NOTE("item read complete");
 
     *item = std::move(record);
     return true;
@@ -597,6 +640,13 @@ bool ItemRepository::get(const std::string &id, ItemRecord *item,
 
 bool ItemRepository::create(const NewItem &item, std::string *id,
                             std::string *error)
+{
+    return create(item, std::span<const std::uint8_t>(), id, error);
+}
+
+bool ItemRepository::create(const NewItem &item,
+                            std::span<const std::uint8_t> topSecretKek,
+                            std::string *id, std::string *error)
 {
     if (id)
         id->clear();
@@ -616,21 +666,32 @@ bool ItemRepository::create(const NewItem &item, std::string *id,
         setError(error, "item type and title are required");
         return false;
     }
-    if (item.classification != "C" && item.classification != "S") {
+    if (item.classification != "C" && item.classification != "S"
+        && item.classification != "T") {
         setError(error, "unsupported item classification");
         return false;
     }
-    const bool secret = item.classification == "S";
+    const bool secret = item.classification != "C";
+    const bool topSecret = item.classification == "T";
     if (secret && m_kek.size() != 32) {
         setError(error, "vault key encryption key is unavailable");
         return false;
     }
+    if (topSecret && topSecretKek.size() != 32) {
+        setError(error, "Top Secret key is locked");
+        return false;
+    }
 
+    CRYPTOWL_TRACE_NOTE("create " + item.type + " item ("
+                        + item.classification + ")");
     const std::string itemId = uuidV4();
     std::string dekId;
     std::string dataId;
     ProtectedValue dek;
     EncryptedData encrypted;
+    const auto wrappingKey = topSecret ? topSecretKek : m_kek;
+    const char *wrapContext =
+        topSecret ? "dek.wrap.top_secret_kek" : "dek.wrap.kek";
 
     CRYPTOWL_TRACE_SECRET_TEXT(
         "item.create",
@@ -641,9 +702,13 @@ bool ItemRepository::create(const NewItem &item, std::string *id,
     if (secret) {
         dekId = uuidV4();
         dataId = uuidV4();
+        CRYPTOWL_TRACE_NOTE("generate per-item DEK");
         dek = ProtectedValue(cryptowl::crypto::randomBytes(32));
+        CRYPTOWL_TRACE_NOTE("encrypt payload with AES-256-GCM");
         if (!encryptPayload(dek.span(), dataId, item.payload, &encrypted, error))
             return false;
+    } else {
+        CRYPTOWL_TRACE_NOTE("store C-tier payload in SQLCipher");
     }
 
     CRYPTOWL_TRACE_SECRET_TEXT(
@@ -657,6 +722,7 @@ bool ItemRepository::create(const NewItem &item, std::string *id,
     }
 
     const std::int64_t timestamp = nowMillis();
+    CRYPTOWL_TRACE_NOTE("begin item write");
     if (!execute(m_database.handle(), "BEGIN IMMEDIATE;", error))
         return false;
 
@@ -666,8 +732,8 @@ bool ItemRepository::create(const NewItem &item, std::string *id,
     };
 
     if ((secret
-         && (!insertDek(m_database.handle(), dekId, m_kek, dek.span(), timestamp,
-                        error)
+         && (!insertDek(m_database.handle(), dekId, wrappingKey, dek.span(),
+                        timestamp, wrapContext, error)
              || !insertEncryptedData(m_database.handle(), dataId, dekId, encrypted,
                                      timestamp, error)))
         || !insertItem(m_database.handle(), itemId, item,
@@ -683,6 +749,7 @@ bool ItemRepository::create(const NewItem &item, std::string *id,
         return false;
     }
 
+    CRYPTOWL_TRACE_NOTE("item and version row written");
     if (!execute(m_database.handle(), "COMMIT;", error)) {
         rollback();
         return false;
@@ -695,6 +762,13 @@ bool ItemRepository::create(const NewItem &item, std::string *id,
 bool ItemRepository::update(const std::string &id, const ItemUpdate &item,
                             std::string *error)
 {
+    return update(id, item, std::span<const std::uint8_t>(), error);
+}
+
+bool ItemRepository::update(const std::string &id, const ItemUpdate &item,
+                            std::span<const std::uint8_t> topSecretKek,
+                            std::string *error)
+{
     if (!m_database.handle()) {
         setError(error, "database is not open");
         return false;
@@ -704,6 +778,7 @@ bool ItemRepository::update(const std::string &id, const ItemUpdate &item,
         return false;
     }
 
+    CRYPTOWL_TRACE_NOTE("update item " + id);
     if (!execute(m_database.handle(), "BEGIN IMMEDIATE;", error))
         return false;
 
@@ -743,12 +818,13 @@ bool ItemRepository::update(const std::string &id, const ItemUpdate &item,
         currentDekId = columnText(statement.get(), 3);
     }
 
-    if (currentClassification != "C" && currentClassification != "S") {
+    if (currentClassification != "C" && currentClassification != "S"
+        && currentClassification != "T") {
         rollback();
         setError(error, "unsupported item classification");
         return false;
     }
-    if (currentClassification == "S"
+    if ((currentClassification == "S" || currentClassification == "T")
         && (currentDataId.empty() || currentDekId.empty())) {
         rollback();
         setError(error, "encrypted item data is invalid");
@@ -757,17 +833,32 @@ bool ItemRepository::update(const std::string &id, const ItemUpdate &item,
 
     const std::string desiredClassification =
         item.classification.empty() ? currentClassification : item.classification;
-    if (desiredClassification != "C" && desiredClassification != "S") {
+    if (desiredClassification != "C" && desiredClassification != "S"
+        && desiredClassification != "T") {
         rollback();
         setError(error, "unsupported item classification");
         return false;
     }
-    const bool desiredSecret = desiredClassification == "S";
-    if (desiredSecret && m_kek.size() != 32) {
+    const bool desiredSecret = desiredClassification != "C";
+    const bool desiredTopSecret = desiredClassification == "T";
+    if (currentClassification != desiredClassification) {
+        CRYPTOWL_TRACE_NOTE("change item tier " + currentClassification + " -> "
+                            + desiredClassification);
+    }
+    const bool touchesTopSecret = currentClassification == "T" || desiredTopSecret;
+    if (touchesTopSecret && topSecretKek.size() != 32) {
+        rollback();
+        setError(error, "Top Secret content is locked");
+        return false;
+    }
+    if (desiredClassification == "S" && m_kek.size() != 32) {
         rollback();
         setError(error, "vault key encryption key is unavailable");
         return false;
     }
+    const auto wrappingKey = desiredTopSecret ? topSecretKek : m_kek;
+    const char *wrapContext =
+        desiredTopSecret ? "dek.wrap.top_secret_kek" : "dek.wrap.kek";
 
     CRYPTOWL_TRACE_SECRET_TEXT(
         "item.update",
@@ -784,6 +875,7 @@ bool ItemRepository::update(const std::string &id, const ItemUpdate &item,
         return false;
     }
     if (seq > 0 && previousFingerprint == newFingerprint) {
+        CRYPTOWL_TRACE_NOTE("item unchanged; no version written");
         if (!execute(m_database.handle(), "COMMIT;", error)) {
             rollback();
             return false;
@@ -799,23 +891,27 @@ bool ItemRepository::update(const std::string &id, const ItemUpdate &item,
     EncryptedData encrypted;
 
     if (desiredSecret) {
-        if (currentClassification == "S") {
+        if (currentClassification == "S" && desiredClassification == "S") {
             dekId = currentDekId;
-            if (!loadDek(m_database.handle(), dekId, m_kek, &dek, error)) {
+            CRYPTOWL_TRACE_NOTE("reuse existing item DEK");
+            if (!loadDek(m_database.handle(), dekId, m_kek, "dek.unwrap.kek",
+                         &dek, error)) {
                 rollback();
                 return false;
             }
         } else {
             dekId = uuidV4();
+            CRYPTOWL_TRACE_NOTE("generate new item DEK");
             dek = ProtectedValue(cryptowl::crypto::randomBytes(32));
-            if (!insertDek(m_database.handle(), dekId, m_kek, dek.span(), timestamp,
-                           error)) {
+            if (!insertDek(m_database.handle(), dekId, wrappingKey, dek.span(),
+                           timestamp, wrapContext, error)) {
                 rollback();
                 return false;
             }
         }
 
         dataId = uuidV4();
+        CRYPTOWL_TRACE_NOTE("encrypt payload with AES-256-GCM");
         if (!encryptPayload(dek.span(), dataId, item.payload, &encrypted, error)
             || !insertEncryptedData(m_database.handle(), dataId, dekId, encrypted,
                                     timestamp, error)) {
@@ -823,6 +919,7 @@ bool ItemRepository::update(const std::string &id, const ItemUpdate &item,
             return false;
         }
     } else {
+        CRYPTOWL_TRACE_NOTE("store C-tier payload in SQLCipher");
         content = item.payload;
     }
 
@@ -840,6 +937,7 @@ bool ItemRepository::update(const std::string &id, const ItemUpdate &item,
         "UPDATE t_item SET title = ?, classification = ?, content = ?, "
         "encrypted_data_id = ?, meta = ?, updated_at = ? "
         "WHERE id = ? AND deleted_at IS NULL;";
+    CRYPTOWL_TRACE_NOTE("write item and version row");
     {
         Statement updateStatement(m_database.handle(), kUpdateSql, error);
         if (!updateStatement.ok()

@@ -336,6 +336,13 @@ std::string secretHead(std::string_view label, std::size_t bytes)
 
 } // namespace
 
+void traceNote(std::string_view message)
+{
+    std::string line = prefix() + styled(">>", kBoldCyan) + " ";
+    line.append(message);
+    writeLine(line);
+}
+
 void traceSecret(std::string_view label, std::span<const std::uint8_t> bytes,
                  std::size_t maxBytes)
 {
@@ -408,6 +415,7 @@ void traceAeadSecrets(std::string_view operation, std::string_view context,
 void traceSqlCipher(std::string_view databasePath,
                     std::span<const std::uint8_t> rawKey)
 {
+    CRYPTOWL_TRACE_NOTE("open SQLCipher database");
     std::string header = prefix() + styled("+-", kDim) + " "
         + styled("sqlcipher", kBoldCyan) + "  "
         + styled(databasePath, kBold);

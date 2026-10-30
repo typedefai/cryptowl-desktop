@@ -1,6 +1,7 @@
 #include "vault/VaultDatabase.h"
 
 #include "crypto/Bytes.h"
+#include "crypto/Trace.h"
 #include "vault/Schema.h"
 
 #include <sqlite3.h>
@@ -117,6 +118,13 @@ bool VaultDatabase::openWithFlags(const std::string &path, int flags,
 {
     close();
 
+    if (flags & SQLITE_OPEN_CREATE)
+        CRYPTOWL_TRACE_NOTE("create SQLCipher database " + path);
+    else if (flags & SQLITE_OPEN_READONLY)
+        CRYPTOWL_TRACE_NOTE("verify SQLCipher database " + path);
+    else
+        CRYPTOWL_TRACE_NOTE("open SQLCipher database " + path);
+
     const int rc = sqlite3_open_v2(path.c_str(), &m_handle, flags, nullptr);
     if (rc != SQLITE_OK) {
         setError(error, m_handle ? sqlite3_errmsg(m_handle)
@@ -151,6 +159,7 @@ bool VaultDatabase::open(const std::string &path,
     if (!openWithFlags(path, SQLITE_OPEN_READWRITE, vaultKey, error))
         return false;
 
+    CRYPTOWL_TRACE_NOTE("verify SQLCipher schema");
     if (!execute("PRAGMA foreign_keys = ON;", error)
         || !execute("PRAGMA secure_delete = ON;", error)
         || !hasSchema(m_handle, error)) {
@@ -177,6 +186,7 @@ bool VaultDatabase::create(const std::string &path,
         std::filesystem::remove(fsPath, ec);
         return false;
     }
+    CRYPTOWL_TRACE_NOTE("create SQLCipher schema");
     if (!db.execute("PRAGMA foreign_keys = ON;", error)
         || !db.execute("PRAGMA secure_delete = ON;", error)
         || !db.execute(std::string(schemaSql()), error)

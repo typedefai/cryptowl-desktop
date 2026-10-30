@@ -85,6 +85,7 @@ VaultUnlocker::Result VaultUnlocker::unlock(const QString &vaultPath,
                                             bool migrateDeviceSecret)
 {
     try {
+        CRYPTOWL_TRACE_NOTE("unlock vault");
         QFile metaFile(QDir(vaultPath).filePath(QStringLiteral("vault.meta")));
         if (!metaFile.open(QIODevice::ReadOnly))
             return failure(QStringLiteral("Cannot read vault.meta."));
@@ -166,6 +167,7 @@ VaultUnlocker::Result VaultUnlocker::unlock(const QString &vaultPath,
             DeviceSecretStore::load(vaultPath, vaultId, argon2Salt);
         if (!secretResult.ok)
             return failure(secretResult.error);
+        CRYPTOWL_TRACE_NOTE("load device secret from secure store");
         ProtectedValue deviceSecret(std::move(secretResult.secret));
 
         QByteArray passwordUtf8 = password.toUtf8();
@@ -178,12 +180,15 @@ VaultUnlocker::Result VaultUnlocker::unlock(const QString &vaultPath,
 
         ProtectedValue passwordKey(hmacSha256(deviceSecret.span(), passwordSpan));
 
+        CRYPTOWL_TRACE_NOTE(
+            "derive P = HMAC-SHA256(device_secret, master_password)");
         Argon2Params params;
         params.memoryKib = static_cast<std::uint32_t>(memoryKib);
         params.iterations = static_cast<std::uint32_t>(iterations);
         params.parallelism = static_cast<std::uint32_t>(parallelism);
         ProtectedValue tmk(argon2id(passwordKey.span(), argon2Salt, params));
 
+        CRYPTOWL_TRACE_NOTE("derive TMK = Argon2id(P, argon2_salt)");
         ProtectedValue smk(hkdfSha256(
             tmk.span(), hkdfSalt,
             bytesOf(std::string_view(vaultIdUtf8.constData(),
@@ -192,11 +197,14 @@ VaultUnlocker::Result VaultUnlocker::unlock(const QString &vaultPath,
         if (smk.size() != 64)
             return failure(QStringLiteral("Invalid stretched master key."));
 
+        CRYPTOWL_TRACE_NOTE(
+            "derive SMK = HKDF-SHA256(TMK, hkdf_salt, vault_id, 64)");
         const auto macKey = std::span<const std::uint8_t>(smk.span().data() + 32, 32);
 
         QJsonObject metaForMac = meta;
         metaForMac.remove(QStringLiteral("mac"));
         const QByteArray canonical = QJsonDocument(metaForMac).toJson(QJsonDocument::Compact);
+        CRYPTOWL_TRACE_NOTE("verify vault.meta MAC");
         const Bytes actualMac = hmacSha256(
             macKey, bytesOf(std::string_view(canonical.constData(),
                                              static_cast<std::size_t>(canonical.size()))));
@@ -205,6 +213,7 @@ VaultUnlocker::Result VaultUnlocker::unlock(const QString &vaultPath,
                 QStringLiteral("Incorrect password or corrupted vault metadata."));
 
         const auto wrappingKey = std::span<const std::uint8_t>(smk.span().data(), 32);
+        CRYPTOWL_TRACE_NOTE("unwrap VaultKey with SMK[0:32]");
         Bytes vaultKeyBytes = aesGcmDecrypt(
             wrappingKey, nonce, bytesOf(wrappedId.toStdString()), ciphertext, tag,
             "vault_key.unwrap.smk");
@@ -215,6 +224,7 @@ VaultUnlocker::Result VaultUnlocker::unlock(const QString &vaultPath,
 
         const QString databasePath = QDir(vaultPath).filePath(QStringLiteral("vault.db"));
         if (QFileInfo::exists(databasePath)) {
+            CRYPTOWL_TRACE_NOTE("verify SQLCipher database");
             std::string databaseError;
             if (!cryptowl::vault::VaultDatabase::verify(
                     databasePath.toUtf8().toStdString(), vaultKeyBytes, &databaseError)) {
@@ -240,6 +250,7 @@ VaultUnlocker::Result VaultUnlocker::unlock(const QString &vaultPath,
         CRYPTOWL_TRACE_SECRET("kdf.smk", smk.span());
         CRYPTOWL_TRACE_SECRET("kdf.vault_key", vaultKeyBytes);
         CRYPTOWL_TRACE_SQLCIPHER(databasePath.toUtf8().toStdString(), vaultKeyBytes);
+        CRYPTOWL_TRACE_NOTE("vault unlock complete");
 
         Result result;
         result.ok = true;

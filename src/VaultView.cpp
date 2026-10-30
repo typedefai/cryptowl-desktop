@@ -2,6 +2,9 @@
 
 #include "NoteEditorDialog.h"
 #include "PasswordEditorDialog.h"
+#include "TopSecretDialog.h"
+#include "TopSecretService.h"
+#include "crypto/ProtectedValue.h"
 #include "vault/ItemRepository.h"
 #include "vault/VaultSession.h"
 
@@ -425,23 +428,16 @@ void VaultView::updateInfo()
     }
 
     if (row->type == QLatin1String(kNoteType)) {
-        ItemRecord record;
-        std::string error;
-        QString body;
-        if (m_session->items().get(row->id.toStdString(), &record, &error)) {
-            QString noteText = QString::fromStdString(record.payload);
-            body = noteText.left(4000).toHtmlEscaped();
-            body.replace(QLatin1Char('\n'), QStringLiteral("<br>"));
-            if (noteText.size() > 4000)
-                body += QStringLiteral("<br>…");
-            wipe(record.payload);
-            wipe(noteText);
+        QString hint;
+        if (row->classification == QLatin1String("T")) {
+            hint = tr("<p><i>Top Secret note content is available in the "
+                      "editor; the secondary password is required.</i></p>");
+        } else if (row->classification == QLatin1String("S")) {
+            hint = tr("<p><i>Secret note content is available in the "
+                      "editor.</i></p>");
         } else {
-            body = tr("<i>Could not read this note.</i>");
+            hint = tr("<p><i>Open the note editor to view its content.</i></p>");
         }
-
-        if (body.isEmpty())
-            body = tr("<i>No content yet.</i>");
 
         m_info->setHtml(
             tr("<h3>%1</h3>"
@@ -449,12 +445,21 @@ void VaultView::updateInfo()
                "<tr><td><b>Type</b></td><td>Note</td></tr>"
                "<tr><td><b>Classification</b></td><td>%2</td></tr>"
                "<tr><td><b>Modified</b></td><td>%3</td></tr>"
-               "</table><h4>Note</h4><p>%4</p>")
+               "</table>%4")
                 .arg(row->title.toHtmlEscaped(),
                      classificationLabel(row->classification).toHtmlEscaped(),
-                     updatedText(row->updatedAt), body));
+                     updatedText(row->updatedAt), hint));
         emit statusMessage(tr("Selected: %1").arg(row->title));
         return;
+    }
+
+    QString hint;
+    if (row->classification == QLatin1String("T")) {
+        hint = tr("<p><i>Top Secret password content is available in the "
+                  "editor; the secondary password is required.</i></p>");
+    } else {
+        hint = tr("<p><i>Open the editor to view or change the password and "
+                  "notes.</i></p>");
     }
 
     m_info->setHtml(
@@ -462,17 +467,89 @@ void VaultView::updateInfo()
            "<table cellspacing=\"4\">"
            "<tr><td><b>Type</b></td><td>Password</td></tr>"
            "<tr><td><b>User name</b></td><td>%2</td></tr>"
-           "<tr><td><b>Password</b></td><td>••••••••</td></tr>"
            "<tr><td><b>URL</b></td><td>%3</td></tr>"
            "<tr><td><b>Classification</b></td><td>%4</td></tr>"
            "<tr><td><b>Modified</b></td><td>%5</td></tr>"
-           "</table><p><i>Use Edit to reveal or change the password.</i></p>")
+           "</table>%6")
             .arg(row->title.toHtmlEscaped(), escapedOrDash(row->username),
                  escapedOrDash(row->url),
                  classificationLabel(row->classification).toHtmlEscaped(),
-                 updatedText(row->updatedAt)));
+                 updatedText(row->updatedAt), hint));
 
     emit statusMessage(tr("Selected: %1").arg(row->title));
+}
+
+bool VaultView::topSecretConfigured() const
+{
+    if (!m_session)
+        return false;
+    TopSecretService service(m_vaultPath, m_session->handle());
+    return service.isConfigured();
+}
+
+bool VaultView::authorizeTopSecret(
+    cryptowl::crypto::ProtectedValue *topSecretKek, QString *error)
+{
+    if (!m_session) {
+        if (error)
+            *error = tr("Vault data is unavailable.");
+        return false;
+    }
+
+    TopSecretService service(m_vaultPath, m_session->handle());
+    QString configError;
+    if (!service.isConfigured(&configError)) {
+        if (error) {
+            *error = configError.isEmpty() ? tr("Top Secret is not set up.")
+                                           : configError;
+        }
+        return false;
+    }
+
+    TopSecretUnlockDialog dialog(&service, this);
+    if (dialog.exec() != QDialog::Accepted) {
+        if (error)
+            error->clear();
+        return false;
+    }
+
+    if (!topSecretKek) {
+        if (error)
+            *error = tr("Top Secret key is unavailable.");
+        return false;
+    }
+    *topSecretKek = dialog.takeTopSecretKek();
+    if (topSecretKek->size() != 32) {
+        if (error)
+            *error = tr("Top Secret key is unavailable.");
+        return false;
+    }
+    return true;
+}
+
+void VaultView::setupTopSecret()
+{
+    if (!m_session)
+        return;
+
+    TopSecretService service(m_vaultPath, m_session->handle());
+    QString error;
+    if (service.isConfigured(&error)) {
+        QMessageBox::information(this, tr("Top Secret"),
+                                 tr("Top Secret is already set up."));
+        return;
+    }
+    if (!error.isEmpty()) {
+        QMessageBox::warning(this, tr("Top Secret"), error);
+        return;
+    }
+
+    TopSecretSetupDialog dialog(m_vaultPath, m_session->handle(), this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    emit statusMessage(tr("Top Secret enabled"));
+    updateInfo();
 }
 
 void VaultView::setFilter(const QString &filter)
@@ -598,23 +675,37 @@ void VaultView::addEntry()
         return;
 
     PasswordEditorDialog dialog(this);
+    dialog.setTopSecretAvailable(topSecretConfigured());
+    cryptowl::crypto::ProtectedValue topSecretKek;
+    dialog.setSaveAuthorizer(
+        [this, &topSecretKek](const PasswordEditorDialog::Data &data,
+                              QString *error) {
+            if (data.classification != QLatin1String("T"))
+                return true;
+            return authorizeTopSecret(&topSecretKek, error);
+        });
     if (dialog.exec() != QDialog::Accepted)
         return;
 
     PasswordEditorDialog::Data data = dialog.data();
+    const bool topSecret = data.classification == QLatin1String("T");
     QByteArray meta = passwordMeta(data);
     QByteArray payload = passwordPayload(data);
 
     NewItem item;
     item.type = kPasswordType;
-    item.classification = "S";
+    item.classification = topSecret ? "T" : "S";
     item.title = data.title.toStdString();
     item.meta = meta.toStdString();
     item.payload = payload.toStdString();
 
     std::string id;
     std::string error;
-    const bool created = m_session->items().create(item, &id, &error);
+    const bool created =
+        topSecret
+        ? m_session->items().create(item, topSecretKek.span(), &id, &error)
+        : m_session->items().create(item, &id, &error);
+    topSecretKek.clear();
 
     wipe(item.payload);
     wipe(data.password);
@@ -638,13 +729,25 @@ void VaultView::addNote()
         return;
 
     NoteEditorDialog dialog(this);
+    dialog.setTopSecretAvailable(topSecretConfigured());
+    cryptowl::crypto::ProtectedValue topSecretKek;
+    dialog.setSaveAuthorizer(
+        [this, &topSecretKek](const NoteEditorDialog::Data &data,
+                              QString *error) {
+            if (data.classification != QLatin1String("T"))
+                return true;
+            return authorizeTopSecret(&topSecretKek, error);
+        });
     if (dialog.exec() != QDialog::Accepted)
         return;
 
     NoteEditorDialog::Data data = dialog.data();
-    if (data.classification != QLatin1String("S"))
+    if (data.classification != QLatin1String("S")
+        && data.classification != QLatin1String("T")) {
         data.classification = QStringLiteral("C");
+    }
 
+    const bool topSecret = data.classification == QLatin1String("T");
     NewItem item;
     item.type = kNoteType;
     item.classification = data.classification.toStdString();
@@ -654,7 +757,11 @@ void VaultView::addNote()
 
     std::string id;
     std::string error;
-    const bool created = m_session->items().create(item, &id, &error);
+    const bool created =
+        topSecret
+        ? m_session->items().create(item, topSecretKek.span(), &id, &error)
+        : m_session->items().create(item, &id, &error);
+    topSecretKek.clear();
 
     wipe(item.payload);
     wipe(data.body);
@@ -689,49 +796,104 @@ void VaultView::editSelectedEntry()
 
 void VaultView::editSelectedPassword()
 {
-    const QString id = selectedId();
-    if (id.isEmpty())
+    if (!m_session)
         return;
 
-    ItemRecord record;
-    std::string error;
-    if (!m_session->items().get(id.toStdString(), &record, &error)) {
-        QMessageBox::critical(this, tr("Could not read password"),
-                              QString::fromStdString(error));
+    const QString id = selectedId();
+    const ItemRow *row = id.isEmpty() ? nullptr : rowForId(id);
+    if (!row || row->type != QLatin1String(kPasswordType))
         return;
+
+    const bool wasTopSecret = row->classification == QLatin1String("T");
+    PasswordEditorDialog::Data data;
+    data.title = row->title;
+    data.username = row->username;
+    data.url = row->url;
+    data.classification = wasTopSecret ? QStringLiteral("T") : QStringLiteral("S");
+
+    PasswordEditorDialog::SecretLoader loader;
+    if (wasTopSecret) {
+        loader = [this, id](QString *password, QString *notes, QString *error) {
+            cryptowl::crypto::ProtectedValue topSecretKek;
+            if (!authorizeTopSecret(&topSecretKek, error))
+                return false;
+            ItemRecord record;
+            std::string recordError;
+            if (!m_session->items().get(id.toStdString(), topSecretKek.span(),
+                                        &record, &recordError)) {
+                if (error)
+                    *error = QString::fromStdString(recordError);
+                return false;
+            }
+            const QJsonObject payload = parseJsonObject(record.payload);
+            *password = jsonString(payload, QStringLiteral("secret"));
+            *notes = jsonString(payload, QStringLiteral("notes"));
+            wipe(record.payload);
+            return true;
+        };
+    } else if (row->classification == QLatin1String("S")) {
+        const auto session = m_session;
+        const std::string itemId = id.toStdString();
+        loader = [session, itemId](QString *password, QString *notes,
+                                   QString *error) {
+            ItemRecord record;
+            std::string recordError;
+            if (!session->items().get(itemId, &record, &recordError)) {
+                if (error)
+                    *error = QString::fromStdString(recordError);
+                return false;
+            }
+            const QJsonObject payload = parseJsonObject(record.payload);
+            *password = jsonString(payload, QStringLiteral("secret"));
+            *notes = jsonString(payload, QStringLiteral("notes"));
+            wipe(record.payload);
+            return true;
+        };
+    } else {
+        ItemRecord record;
+        std::string recordError;
+        if (!m_session->items().get(id.toStdString(), &record, &recordError)) {
+            QMessageBox::critical(this, tr("Could not read password"),
+                                  QString::fromStdString(recordError));
+            return;
+        }
+        const QJsonObject payload = parseJsonObject(record.payload);
+        data.password = jsonString(payload, QStringLiteral("secret"));
+        data.notes = jsonString(payload, QStringLiteral("notes"));
+        wipe(record.payload);
     }
 
-    const QJsonObject payload = parseJsonObject(record.payload);
-    const QJsonObject meta = parseJsonObject(record.meta);
-
-    PasswordEditorDialog::Data data;
-    data.title = QString::fromStdString(record.title);
-    data.username = jsonString(payload, QStringLiteral("username"));
-    if (data.username.isEmpty())
-        data.username = jsonString(meta, QStringLiteral("username"));
-    data.url = jsonString(payload, QStringLiteral("url"));
-    if (data.url.isEmpty())
-        data.url = jsonString(meta, QStringLiteral("url"));
-    data.password = jsonString(payload, QStringLiteral("secret"));
-    data.notes = jsonString(payload, QStringLiteral("notes"));
-    wipe(record.payload);
-
-    PasswordEditorDialog dialog(data, this);
+    PasswordEditorDialog dialog(data, std::move(loader), this);
+    dialog.setTopSecretAvailable(topSecretConfigured());
+    cryptowl::crypto::ProtectedValue saveKek;
+    dialog.setSaveAuthorizer(
+        [this, wasTopSecret, &saveKek](const PasswordEditorDialog::Data &data,
+                                       QString *error) {
+            if (!wasTopSecret && data.classification != QLatin1String("T"))
+                return true;
+            return authorizeTopSecret(&saveKek, error);
+        });
     wipe(data.password);
     if (dialog.exec() != QDialog::Accepted)
         return;
 
+    std::string error;
     data = dialog.data();
+    const bool desiredTopSecret = data.classification == QLatin1String("T");
     QByteArray metaJson = passwordMeta(data);
     QByteArray payloadJson = passwordPayload(data);
 
     ItemUpdate update;
     update.title = data.title.toStdString();
-    update.classification = "S";
+    update.classification = desiredTopSecret ? "T" : "S";
     update.meta = metaJson.toStdString();
     update.payload = payloadJson.toStdString();
 
-    const bool updated = m_session->items().update(id.toStdString(), update, &error);
+    const bool updated =
+        (wasTopSecret || desiredTopSecret)
+        ? m_session->items().update(id.toStdString(), update, saveKek.span(), &error)
+        : m_session->items().update(id.toStdString(), update, &error);
+    saveKek.clear();
 
     wipe(update.payload);
     wipe(data.password);
@@ -749,34 +911,90 @@ void VaultView::editSelectedPassword()
 
 void VaultView::editSelectedNote()
 {
-    const QString id = selectedId();
-    if (id.isEmpty())
+    if (!m_session)
         return;
 
-    ItemRecord record;
-    std::string error;
-    if (!m_session->items().get(id.toStdString(), &record, &error)) {
-        QMessageBox::critical(this, tr("Could not read note"),
-                              QString::fromStdString(error));
+    const QString id = selectedId();
+    const ItemRow *row = id.isEmpty() ? nullptr : rowForId(id);
+    if (!row || row->type != QLatin1String(kNoteType))
         return;
+
+    const bool wasTopSecret = row->classification == QLatin1String("T");
+    NoteEditorDialog::Data data;
+    data.title = row->title;
+    if (wasTopSecret)
+        data.classification = QStringLiteral("T");
+    else if (row->classification == QLatin1String("S"))
+        data.classification = QStringLiteral("S");
+    else
+        data.classification = QStringLiteral("C");
+
+    NoteEditorDialog::ContentLoader loader;
+    if (wasTopSecret) {
+        loader = [this, id](QString *body, QString *error) {
+            cryptowl::crypto::ProtectedValue topSecretKek;
+            if (!authorizeTopSecret(&topSecretKek, error))
+                return false;
+            ItemRecord record;
+            std::string recordError;
+            if (!m_session->items().get(id.toStdString(), topSecretKek.span(),
+                                        &record, &recordError)) {
+                if (error)
+                    *error = QString::fromStdString(recordError);
+                return false;
+            }
+            *body = QString::fromStdString(record.payload);
+            wipe(record.payload);
+            return true;
+        };
+    } else if (row->classification == QLatin1String("S")) {
+        const auto session = m_session;
+        const std::string itemId = id.toStdString();
+        loader = [session, itemId](QString *body, QString *error) {
+            ItemRecord record;
+            std::string recordError;
+            if (!session->items().get(itemId, &record, &recordError)) {
+                if (error)
+                    *error = QString::fromStdString(recordError);
+                return false;
+            }
+            *body = QString::fromStdString(record.payload);
+            wipe(record.payload);
+            return true;
+        };
+    } else {
+        ItemRecord record;
+        std::string recordError;
+        if (!m_session->items().get(id.toStdString(), &record, &recordError)) {
+            QMessageBox::critical(this, tr("Could not read note"),
+                                  QString::fromStdString(recordError));
+            return;
+        }
+        data.body = QString::fromStdString(record.payload);
+        wipe(record.payload);
     }
 
-    NoteEditorDialog::Data data;
-    data.title = QString::fromStdString(record.title);
-    data.body = QString::fromStdString(record.payload);
-    data.classification = QString::fromStdString(record.classification);
-    if (data.classification != QLatin1String("S"))
-        data.classification = QStringLiteral("C");
-    wipe(record.payload);
-
-    NoteEditorDialog dialog(data, this);
+    NoteEditorDialog dialog(data, std::move(loader), this);
+    dialog.setTopSecretAvailable(topSecretConfigured());
+    cryptowl::crypto::ProtectedValue saveKek;
+    dialog.setSaveAuthorizer(
+        [this, wasTopSecret, &saveKek](const NoteEditorDialog::Data &data,
+                                       QString *error) {
+            if (!wasTopSecret && data.classification != QLatin1String("T"))
+                return true;
+            return authorizeTopSecret(&saveKek, error);
+        });
     wipe(data.body);
     if (dialog.exec() != QDialog::Accepted)
         return;
 
+    std::string error;
     data = dialog.data();
-    if (data.classification != QLatin1String("S"))
+    if (data.classification != QLatin1String("S")
+        && data.classification != QLatin1String("T")) {
         data.classification = QStringLiteral("C");
+    }
+    const bool desiredTopSecret = data.classification == QLatin1String("T");
 
     ItemUpdate update;
     update.title = data.title.toStdString();
@@ -784,7 +1002,11 @@ void VaultView::editSelectedNote()
     update.meta = "{}";
     update.payload = data.body.toStdString();
 
-    const bool updated = m_session->items().update(id.toStdString(), update, &error);
+    const bool updated =
+        (wasTopSecret || desiredTopSecret)
+        ? m_session->items().update(id.toStdString(), update, saveKek.span(), &error)
+        : m_session->items().update(id.toStdString(), update, &error);
+    saveKek.clear();
 
     wipe(update.payload);
     wipe(data.body);

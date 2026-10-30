@@ -75,7 +75,7 @@ deliberately).
   then classic Windows, then Fusion (set in `main.cpp`). The UI font is the
   bundled Selawik (OFL, `assets/fonts/`), a Segoe UI-compatible face.
 - `src/` holds the `cryptowl_ui` static library (testable) + a thin
-  `cryptowl-desktop` executable; tests link the library.
+  `cryptowl` executable; tests link the library.
 - Tests: Qt Test (`Qt6::Test`), registered with `add_test` in
   `tests/CMakeLists.txt`, run through ctest.
 - Dependencies are vendored or fetched via hash-pinned `FetchContent`; see

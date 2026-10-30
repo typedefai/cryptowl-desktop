@@ -6,6 +6,7 @@
 #include <QLineEdit>
 #include <QMetaObject>
 #include <QPlainTextEdit>
+#include <QPushButton>
 #include <QtTest>
 
 class TestPasswordEditorDialog : public QObject
@@ -15,6 +16,7 @@ class TestPasswordEditorDialog : public QObject
 private slots:
     void roundTripsData();
     void togglesPasswordVisibility();
+    void lazyLoadsSecretOnShow();
     void requiresTitle();
 };
 
@@ -72,6 +74,68 @@ void TestPasswordEditorDialog::togglesPasswordVisibility()
     QCOMPARE(password->echoMode(), QLineEdit::Normal);
     show->setChecked(false);
     QCOMPARE(password->echoMode(), QLineEdit::Password);
+}
+
+void TestPasswordEditorDialog::lazyLoadsSecretOnShow()
+{
+    PasswordEditorDialog::Data initial;
+    initial.title = QStringLiteral("GitHub");
+    initial.username = QStringLiteral("riguz");
+    initial.url = QStringLiteral("https://github.com");
+
+    int loads = 0;
+    PasswordEditorDialog dialog(
+        initial, [&loads](QString *password, QString *notes, QString *error) {
+            ++loads;
+            Q_UNUSED(error);
+            *password = QStringLiteral("loaded-secret");
+            *notes = QStringLiteral("loaded notes");
+            return true;
+        });
+
+    auto *password =
+        dialog.findChild<QLineEdit *>(QStringLiteral("passwordSecret"));
+    auto *notes =
+        dialog.findChild<QPlainTextEdit *>(QStringLiteral("passwordNotes"));
+    auto *show = dialog.findChild<QCheckBox *>(QStringLiteral("passwordShow"));
+    auto *save = dialog.findChild<QPushButton *>(QStringLiteral("passwordSave"));
+    auto *hint = dialog.findChild<QLabel *>(QStringLiteral("passwordLockHint"));
+    QVERIFY(password);
+    QVERIFY(notes);
+    QVERIFY(show);
+    QVERIFY(save);
+    QVERIFY(hint);
+
+    QCOMPARE(loads, 0);
+    QVERIFY(!password->text().isEmpty());
+    QVERIFY(password->text() != QStringLiteral("loaded-secret"));
+    QVERIFY(!password->isEnabled());
+    QVERIFY(!notes->toPlainText().isEmpty());
+    QVERIFY(notes->toPlainText() != QStringLiteral("loaded notes"));
+    QVERIFY(!notes->isEnabled());
+    QVERIFY(!show->isChecked());
+    QVERIFY(!hint->isHidden());
+    QVERIFY(!save->isEnabled());
+
+    QVERIFY(QMetaObject::invokeMethod(&dialog, "save", Qt::DirectConnection));
+    QVERIFY(dialog.result() != int(QDialog::Accepted));
+
+    show->setChecked(true);
+    QCOMPARE(loads, 1);
+    QCOMPARE(password->text(), QStringLiteral("loaded-secret"));
+    QCOMPARE(notes->toPlainText(), QStringLiteral("loaded notes"));
+    QVERIFY(password->isEnabled());
+    QVERIFY(notes->isEnabled());
+    QVERIFY(hint->isHidden());
+    QVERIFY(save->isEnabled());
+    QCOMPARE(password->echoMode(), QLineEdit::Normal);
+
+    QVERIFY(QMetaObject::invokeMethod(&dialog, "save", Qt::DirectConnection));
+    QCOMPARE(dialog.result(), int(QDialog::Accepted));
+
+    show->setChecked(false);
+    QCOMPARE(password->echoMode(), QLineEdit::Password);
+    QCOMPARE(loads, 1);
 }
 
 void TestPasswordEditorDialog::requiresTitle()
