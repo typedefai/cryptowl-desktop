@@ -1,5 +1,7 @@
 #include "NoteEditorDialog.h"
 
+#include "EncryptedContentWidget.h"
+
 #include <QColor>
 #include <QComboBox>
 #include <QDialogButtonBox>
@@ -7,7 +9,6 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPalette>
-#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QStandardItemModel>
 #include <QVBoxLayout>
@@ -18,6 +19,8 @@ NoteEditorDialog::NoteEditorDialog(QWidget *parent)
     : QDialog(parent)
 {
     buildUi(false);
+    m_bodyWidget->setContent(QString());
+    updateSaveButton();
 }
 
 NoteEditorDialog::NoteEditorDialog(const Data &data, QWidget *parent)
@@ -28,30 +31,17 @@ NoteEditorDialog::NoteEditorDialog(const Data &data, QWidget *parent)
 NoteEditorDialog::NoteEditorDialog(const Data &data, ContentLoader loader,
                                    QWidget *parent)
     : QDialog(parent)
-    , m_contentLoader(std::move(loader))
 {
     buildUi(true);
     m_titleEdit->setText(data.title);
     const int index = m_classificationCombo->findData(data.classification);
     m_classificationCombo->setCurrentIndex(index >= 0 ? index : 0);
 
-    if (m_contentLoader) {
-        m_contentRevealed = false;
-        m_bodyEdit->setPlainText(QStringLiteral(
-            "••••••••••••••••••••••••••••••••\n"
-            "••••••••••••••••••••••••••••••••\n"
-            "••••••••••••••••••••••••••••••••"));
-        m_bodyEdit->setReadOnly(true);
-        m_lockHint->show();
-        m_revealButton->show();
-        m_saveButton->setEnabled(false);
-    } else {
-        m_contentRevealed = true;
-        m_bodyEdit->setPlainText(data.body);
-        m_lockHint->hide();
-        m_revealButton->hide();
-        m_saveButton->setEnabled(true);
-    }
+    if (loader)
+        m_bodyWidget->setLoader(std::move(loader));
+    else
+        m_bodyWidget->setContent(data.body);
+    updateSaveButton();
 
     m_titleEdit->selectAll();
     m_titleEdit->setFocus();
@@ -61,7 +51,7 @@ NoteEditorDialog::Data NoteEditorDialog::data() const
 {
     Data result;
     result.title = m_titleEdit->text().trimmed();
-    result.body = m_bodyEdit->toPlainText();
+    result.body = m_bodyWidget->content();
     result.classification = m_classificationCombo->currentData().toString();
     if (result.classification.isEmpty())
         result.classification = QStringLiteral("C");
@@ -104,9 +94,10 @@ void NoteEditorDialog::buildUi(bool editing)
     m_titleEdit->setObjectName(QStringLiteral("noteTitle"));
     m_titleEdit->setPlaceholderText(tr("Required"));
 
-    m_bodyEdit = new QPlainTextEdit(this);
-    m_bodyEdit->setObjectName(QStringLiteral("noteBody"));
-    m_bodyEdit->setPlaceholderText(tr("Write your note…"));
+    m_bodyWidget =
+        new EncryptedContentWidget(EncryptedContentWidget::Mode::MultiLine, this);
+    m_bodyWidget->setObjectName(QStringLiteral("noteBodyWidget"));
+    m_bodyWidget->setPlaceholderText(tr("Write your note…"));
 
     m_classificationCombo = new QComboBox(this);
     m_classificationCombo->setObjectName(QStringLiteral("noteClassification"));
@@ -115,23 +106,9 @@ void NoteEditorDialog::buildUi(bool editing)
     m_classificationCombo->addItem(tr("Top Secret (T)"), QStringLiteral("T"));
 
     form->addRow(tr("Title:"), m_titleEdit);
-    form->addRow(tr("Note:"), m_bodyEdit);
+    form->addRow(tr("Note:"), m_bodyWidget);
     form->addRow(tr("Confidentiality:"), m_classificationCombo);
     layout->addLayout(form);
-
-    m_lockHint = new QLabel(
-        tr("Content is hidden. Click Show content to reveal it."), this);
-    m_lockHint->setObjectName(QStringLiteral("noteLockHint"));
-    m_lockHint->setWordWrap(true);
-    m_lockHint->hide();
-    layout->addWidget(m_lockHint);
-
-    m_revealButton = new QPushButton(tr("Show content"), this);
-    m_revealButton->setObjectName(QStringLiteral("noteReveal"));
-    m_revealButton->hide();
-    connect(m_revealButton, &QPushButton::clicked, this,
-            &NoteEditorDialog::revealContent);
-    layout->addWidget(m_revealButton, 0, Qt::AlignLeft);
 
     auto *classificationHelp = new QLabel(
         tr("Confidential notes are protected by the vault database. "
@@ -164,40 +141,29 @@ void NoteEditorDialog::buildUi(bool editing)
     m_saveButton->setObjectName(QStringLiteral("noteSave"));
     m_saveButton->setText(tr("Save"));
     m_saveButton->setDefault(true);
+    m_saveButton->setEnabled(false);
     connect(buttons, &QDialogButtonBox::accepted, this, &NoteEditorDialog::save);
     connect(buttons, &QDialogButtonBox::rejected, this, &NoteEditorDialog::reject);
     layout->addWidget(buttons);
 
+    connect(m_bodyWidget, &EncryptedContentWidget::revealed, this,
+            &NoteEditorDialog::updateSaveButton);
+    connect(m_bodyWidget, &EncryptedContentWidget::hidden, this,
+            &NoteEditorDialog::updateSaveButton);
+    connect(m_bodyWidget, &EncryptedContentWidget::errorOccurred, this,
+            &NoteEditorDialog::setError);
+
     m_titleEdit->setFocus();
 }
 
-void NoteEditorDialog::revealContent()
+void NoteEditorDialog::updateSaveButton()
 {
-    if (m_contentRevealed || !m_contentLoader)
-        return;
-
-    QString body;
-    QString error;
-    if (!m_contentLoader(&body, &error)) {
-        setError(error.isEmpty() ? tr("Could not decrypt this note.") : error);
-        return;
-    }
-
-    m_bodyEdit->setPlainText(body);
-    body.fill(QChar('\0'));
-    m_bodyEdit->setReadOnly(false);
-    m_bodyEdit->setPlaceholderText(tr("Write your note…"));
-    m_bodyEdit->setFocus();
-    m_contentRevealed = true;
-    m_lockHint->hide();
-    m_revealButton->hide();
-    m_saveButton->setEnabled(true);
-    setError(QString());
+    m_saveButton->setEnabled(m_bodyWidget->isLoaded());
 }
 
 void NoteEditorDialog::save()
 {
-    if (!m_contentRevealed) {
+    if (!m_bodyWidget->isLoaded()) {
         setError(tr("Show the content before saving."));
         return;
     }
@@ -222,7 +188,7 @@ void NoteEditorDialog::save()
 
 void NoteEditorDialog::reject()
 {
-    m_bodyEdit->clear();
+    m_bodyWidget->setContent(QString());
     QDialog::reject();
 }
 

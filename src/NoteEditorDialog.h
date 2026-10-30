@@ -8,8 +8,8 @@
 class QComboBox;
 class QLabel;
 class QLineEdit;
-class QPlainTextEdit;
 class QPushButton;
+class EncryptedContentWidget;
 
 class NoteEditorDialog : public QDialog
 {
@@ -39,21 +39,17 @@ public:
 
 private slots:
     void save();
-    void revealContent();
 
 private:
     void buildUi(bool editing);
     void setError(const QString &message);
+    void updateSaveButton();
 
     QLineEdit *m_titleEdit = nullptr;
-    QPlainTextEdit *m_bodyEdit = nullptr;
+    EncryptedContentWidget *m_bodyWidget = nullptr;
     QComboBox *m_classificationCombo = nullptr;
     QLabel *m_topSecretHint = nullptr;
-    QLabel *m_lockHint = nullptr;
     QLabel *m_errorLabel = nullptr;
-    QPushButton *m_revealButton = nullptr;
     QPushButton *m_saveButton = nullptr;
-    ContentLoader m_contentLoader;
     SaveAuthorizer m_saveAuthorizer;
-    bool m_contentRevealed = true;
 };

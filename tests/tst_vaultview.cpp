@@ -3,6 +3,7 @@
 #include "TopSecretService.h"
 #include "VaultCreator.h"
 #include "VaultUnlocker.h"
+#include "EncryptedContentWidget.h"
 #include "crypto/Bytes.h"
 #include "crypto/ProtectedValue.h"
 #include "vault/ItemRepository.h"
@@ -10,18 +11,17 @@
 #include "vault/VaultSession.h"
 
 #include <QApplication>
-#include <QCheckBox>
 #include <QDialog>
 #include <QDir>
 #include <QFile>
 #include <QLineEdit>
 #include <QListWidget>
-#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QTemporaryDir>
 #include <QTextBrowser>
 #include <QTimer>
+#include <QToolButton>
 #include <QTreeWidget>
 #include <QtTest>
 
@@ -258,30 +258,32 @@ void TestVaultView::editorsLoadSecretsLazily()
             noteFailure = QStringLiteral("note dialog not found");
             return;
         }
-        auto *body =
-            dialog->findChild<QPlainTextEdit *>(QStringLiteral("noteBody"));
-        auto *reveal =
-            dialog->findChild<QPushButton *>(QStringLiteral("noteReveal"));
-        if (!body || !reveal) {
+        auto *body = dialog->findChild<EncryptedContentWidget *>(
+            QStringLiteral("noteBodyWidget"));
+        if (!body) {
             noteFailure = QStringLiteral("note editor widgets missing");
             dialog->reject();
             return;
         }
+        auto *eye = body->findChild<QToolButton *>(QStringLiteral("secretEye"));
+        if (!eye) {
+            noteFailure = QStringLiteral("note eye button missing");
+            dialog->reject();
+            return;
+        }
         noteDialogSeen = true;
-        if (body->toPlainText().isEmpty())
-            noteFailure = QStringLiteral("note body was empty instead of masked");
-        if (body->toPlainText() == QStringLiteral("secret note body"))
+        if (body->isLoaded())
+            noteFailure = QStringLiteral("note body was loaded before reveal");
+        if (!body->content().isEmpty())
             noteFailure = QStringLiteral("note body was not hidden");
-        if (!body->isReadOnly())
-            noteFailure = QStringLiteral("note body was not read-only");
-        if (reveal->isHidden())
-            noteFailure = QStringLiteral("note reveal button was hidden");
+        if (eye->isHidden())
+            noteFailure = QStringLiteral("note eye button was hidden");
 
-        reveal->click();
-        if (body->toPlainText() != QStringLiteral("secret note body"))
+        eye->click();
+        if (!body->isLoaded())
             noteFailure = QStringLiteral("note body was not revealed");
-        if (body->isReadOnly())
-            noteFailure = QStringLiteral("note body stayed read-only");
+        if (body->content() != QStringLiteral("secret note body"))
+            noteFailure = QStringLiteral("note body content was wrong");
         dialog->reject();
     });
     view.editSelectedEntry();
@@ -306,40 +308,42 @@ void TestVaultView::editorsLoadSecretsLazily()
             passwordFailure = QStringLiteral("password dialog not found");
             return;
         }
-        auto *password =
-            dialog->findChild<QLineEdit *>(QStringLiteral("passwordSecret"));
-        auto *notes =
-            dialog->findChild<QPlainTextEdit *>(QStringLiteral("passwordNotes"));
-        auto *show =
-            dialog->findChild<QCheckBox *>(QStringLiteral("passwordShow"));
-        if (!password || !notes || !show) {
+        auto *password = dialog->findChild<EncryptedContentWidget *>(
+            QStringLiteral("passwordSecretWidget"));
+        auto *notes = dialog->findChild<EncryptedContentWidget *>(
+            QStringLiteral("passwordNotesWidget"));
+        if (!password || !notes) {
             passwordFailure = QStringLiteral("password editor widgets missing");
             dialog->reject();
             return;
         }
+        auto *passwordEye =
+            password->findChild<QToolButton *>(QStringLiteral("secretEye"));
+        auto *notesEye =
+            notes->findChild<QToolButton *>(QStringLiteral("secretEye"));
+        if (!passwordEye || !notesEye) {
+            passwordFailure = QStringLiteral("password eye buttons missing");
+            dialog->reject();
+            return;
+        }
         passwordDialogSeen = true;
-        if (password->text().isEmpty())
-            passwordFailure = QStringLiteral("password was empty instead of masked");
-        if (password->text() == QStringLiteral("mock-secret"))
+        if (password->isLoaded())
+            passwordFailure = QStringLiteral("password was loaded before reveal");
+        if (!password->content().isEmpty())
             passwordFailure = QStringLiteral("password was not hidden");
-        if (password->isEnabled())
-            passwordFailure = QStringLiteral("password field was enabled");
-        if (notes->toPlainText().isEmpty())
-            passwordFailure = QStringLiteral("password notes were empty instead of masked");
-        if (notes->toPlainText() == QStringLiteral("test notes"))
+        if (notes->isLoaded())
+            passwordFailure = QStringLiteral("password notes were loaded before reveal");
+        if (!notes->content().isEmpty())
             passwordFailure = QStringLiteral("password notes were not hidden");
-        if (notes->isEnabled())
-            passwordFailure = QStringLiteral("password notes field was enabled");
 
-        show->setChecked(true);
-        if (password->text() != QStringLiteral("mock-secret"))
+        passwordEye->click();
+        if (password->content() != QStringLiteral("mock-secret"))
             passwordFailure = QStringLiteral("password was not revealed");
-        if (notes->toPlainText() != QStringLiteral("test notes"))
+        if (!notes->content().isEmpty())
+            passwordFailure = QStringLiteral("notes were revealed with the password");
+        notesEye->click();
+        if (notes->content() != QStringLiteral("test notes"))
             passwordFailure = QStringLiteral("password notes were not revealed");
-        if (!password->isEnabled())
-            passwordFailure = QStringLiteral("password field stayed disabled");
-        if (!notes->isEnabled())
-            passwordFailure = QStringLiteral("password notes field stayed disabled");
         dialog->reject();
     });
     view.editSelectedEntry();
@@ -364,23 +368,22 @@ void TestVaultView::editorsLoadSecretsLazily()
             publicFailure = QStringLiteral("public note dialog not found");
             return;
         }
-        auto *body =
-            dialog->findChild<QPlainTextEdit *>(QStringLiteral("noteBody"));
-        auto *reveal =
-            dialog->findChild<QPushButton *>(QStringLiteral("noteReveal"));
+        auto *body = dialog->findChild<EncryptedContentWidget *>(
+            QStringLiteral("noteBodyWidget"));
         auto *save = dialog->findChild<QPushButton *>(QStringLiteral("noteSave"));
-        if (!body || !reveal || !save) {
+        if (!body || !save) {
             publicFailure = QStringLiteral("public note editor widgets missing");
             dialog->reject();
             return;
         }
+        auto *eye = body->findChild<QToolButton *>(QStringLiteral("secretEye"));
         publicDialogSeen = true;
-        if (body->toPlainText() != QStringLiteral("public note body"))
+        if (!body->isLoaded()
+            || body->content() != QStringLiteral("public note body")) {
             publicFailure = QStringLiteral("C note content was not loaded directly");
-        if (body->isReadOnly())
-            publicFailure = QStringLiteral("C note body was read-only");
-        if (!reveal->isHidden())
-            publicFailure = QStringLiteral("C note showed a reveal button");
+        }
+        if (eye && !eye->isHidden())
+            publicFailure = QStringLiteral("C note showed an eye button");
         if (!save->isEnabled())
             publicFailure = QStringLiteral("C note save was disabled");
         dialog->reject();
@@ -513,29 +516,33 @@ void TestVaultView::topSecretRevealAndEditor()
             failure = QStringLiteral("note editor not found");
             return;
         }
-        auto *body =
-            editor->findChild<QPlainTextEdit *>(QStringLiteral("noteBody"));
-        auto *revealButton =
-            editor->findChild<QPushButton *>(QStringLiteral("noteReveal"));
+        auto *body = editor->findChild<EncryptedContentWidget *>(
+            QStringLiteral("noteBodyWidget"));
         auto *save = editor->findChild<QPushButton *>(QStringLiteral("noteSave"));
-        if (!body || !revealButton || !save) {
+        if (!body || !save) {
             failure = QStringLiteral("note editor widgets missing");
             editor->reject();
             return;
         }
-        if (body->toPlainText().isEmpty())
-            failure = QStringLiteral("Top Secret note mask missing");
-        if (body->toPlainText() == QStringLiteral("top secret body"))
+        auto *eye = body->findChild<QToolButton *>(QStringLiteral("secretEye"));
+        if (!eye) {
+            failure = QStringLiteral("Top Secret note eye missing");
+            editor->reject();
+            return;
+        }
+        if (body->isLoaded())
+            failure = QStringLiteral("Top Secret note was loaded before reveal");
+        if (!body->content().isEmpty())
             failure = QStringLiteral("Top Secret note was not hidden");
-        if (!body->isReadOnly())
-            failure = QStringLiteral("Top Secret note body was editable");
+        if (save->isEnabled())
+            failure = QStringLiteral("Top Secret note save was enabled");
 
         scheduleUnlock();
-        revealButton->click();
-        if (body->toPlainText() != QStringLiteral("top secret body"))
+        eye->click();
+        if (body->content() != QStringLiteral("top secret body"))
             failure = QStringLiteral("Top Secret note reveal failed");
 
-        body->setPlainText(QStringLiteral("edited top secret body"));
+        body->setContent(QStringLiteral("edited top secret body"));
         scheduleUnlock();
         save->click();
         if (editor->isVisible()) {
@@ -562,32 +569,46 @@ void TestVaultView::topSecretRevealAndEditor()
             failure = QStringLiteral("password editor not found");
             return;
         }
-        auto *password =
-            editor->findChild<QLineEdit *>(QStringLiteral("passwordSecret"));
-        auto *notes =
-            editor->findChild<QPlainTextEdit *>(QStringLiteral("passwordNotes"));
-        auto *show =
-            editor->findChild<QCheckBox *>(QStringLiteral("passwordShow"));
+        auto *password = editor->findChild<EncryptedContentWidget *>(
+            QStringLiteral("passwordSecretWidget"));
+        auto *notes = editor->findChild<EncryptedContentWidget *>(
+            QStringLiteral("passwordNotesWidget"));
         auto *save =
             editor->findChild<QPushButton *>(QStringLiteral("passwordSave"));
-        if (!password || !notes || !show || !save) {
+        if (!password || !notes || !save) {
             failure = QStringLiteral("password editor widgets missing");
             editor->reject();
             return;
         }
-        if (password->text().isEmpty() || notes->toPlainText().isEmpty())
+        auto *passwordEye =
+            password->findChild<QToolButton *>(QStringLiteral("secretEye"));
+        auto *notesEye =
+            notes->findChild<QToolButton *>(QStringLiteral("secretEye"));
+        if (!passwordEye || !notesEye) {
+            failure = QStringLiteral("Top Secret password eyes missing");
+            editor->reject();
+            return;
+        }
+        if (password->isLoaded() || notes->isLoaded())
+            failure = QStringLiteral("Top Secret password loaded before reveal");
+        if (!password->content().isEmpty() || !notes->content().isEmpty())
             failure = QStringLiteral("Top Secret password masks missing");
-        if (password->isEnabled() || notes->isEnabled())
-            failure = QStringLiteral("Top Secret password fields were enabled");
+        if (save->isEnabled())
+            failure = QStringLiteral("Top Secret password save was enabled");
 
         scheduleUnlock();
-        show->setChecked(true);
-        if (password->text() != QStringLiteral("top-secret"))
+        passwordEye->click();
+        if (password->content() != QStringLiteral("top-secret"))
             failure = QStringLiteral("Top Secret password reveal failed");
-        if (notes->toPlainText() != QStringLiteral("top notes"))
+        if (notes->isLoaded())
+            failure = QStringLiteral("Top Secret notes loaded with password");
+
+        scheduleUnlock();
+        notesEye->click();
+        if (notes->content() != QStringLiteral("top notes"))
             failure = QStringLiteral("Top Secret password notes reveal failed");
 
-        notes->setPlainText(QStringLiteral("edited top notes"));
+        notes->setContent(QStringLiteral("edited top notes"));
         scheduleUnlock();
         save->click();
         if (editor->isVisible()) {

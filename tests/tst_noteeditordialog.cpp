@@ -1,11 +1,15 @@
 #include "NoteEditorDialog.h"
 
+#include "EncryptedContentWidget.h"
+
+#include <QApplication>
+#include <QClipboard>
 #include <QComboBox>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMetaObject>
-#include <QPlainTextEdit>
 #include <QPushButton>
+#include <QToolButton>
 #include <QtTest>
 
 class TestNoteEditorDialog : public QObject
@@ -37,7 +41,8 @@ void TestNoteEditorDialog::roundTripsData()
 
     NoteEditorDialog dialog(initial);
     auto *title = dialog.findChild<QLineEdit *>(QStringLiteral("noteTitle"));
-    auto *body = dialog.findChild<QPlainTextEdit *>(QStringLiteral("noteBody"));
+    auto *body = dialog.findChild<EncryptedContentWidget *>(
+        QStringLiteral("noteBodyWidget"));
     auto *classification =
         dialog.findChild<QComboBox *>(QStringLiteral("noteClassification"));
     QVERIFY(title);
@@ -45,11 +50,12 @@ void TestNoteEditorDialog::roundTripsData()
     QVERIFY(classification);
 
     QCOMPARE(title->text(), initial.title);
-    QCOMPARE(body->toPlainText(), initial.body);
+    QCOMPARE(body->content(), initial.body);
+    QVERIFY(body->isLoaded());
     QCOMPARE(classification->currentData().toString(), QStringLiteral("S"));
 
     title->setText(QStringLiteral("Updated notes"));
-    body->setPlainText(QStringLiteral("updated body"));
+    body->setContent(QStringLiteral("updated body"));
     classification->setCurrentIndex(
         classification->findData(QStringLiteral("C")));
 
@@ -74,33 +80,48 @@ void TestNoteEditorDialog::lazyLoadsContentOnReveal()
             return true;
         });
 
-    auto *body = dialog.findChild<QPlainTextEdit *>(QStringLiteral("noteBody"));
-    auto *reveal = dialog.findChild<QPushButton *>(QStringLiteral("noteReveal"));
+    auto *body = dialog.findChild<EncryptedContentWidget *>(
+        QStringLiteral("noteBodyWidget"));
     auto *save = dialog.findChild<QPushButton *>(QStringLiteral("noteSave"));
-    auto *hint = dialog.findChild<QLabel *>(QStringLiteral("noteLockHint"));
     QVERIFY(body);
-    QVERIFY(reveal);
     QVERIFY(save);
-    QVERIFY(hint);
+    auto *eye = body->findChild<QToolButton *>(QStringLiteral("secretEye"));
+    auto *copy = body->findChild<QToolButton *>(QStringLiteral("secretCopy"));
+    QVERIFY(eye);
+    QVERIFY(copy);
 
     QCOMPARE(loads, 0);
-    QVERIFY(!body->toPlainText().isEmpty());
-    QVERIFY(body->toPlainText() != QStringLiteral("loaded secret body"));
-    QVERIFY(body->isReadOnly());
-    QVERIFY(!hint->isHidden());
-    QVERIFY(!reveal->isHidden());
+    QVERIFY(!body->isLoaded());
+    QVERIFY(body->content().isEmpty());
+    QVERIFY(!eye->isHidden());
     QVERIFY(!save->isEnabled());
+    QVERIFY(!copy->isEnabled());
 
     QVERIFY(QMetaObject::invokeMethod(&dialog, "save", Qt::DirectConnection));
     QVERIFY(dialog.result() != int(QDialog::Accepted));
 
-    reveal->click();
+    eye->click();
     QCOMPARE(loads, 1);
-    QCOMPARE(body->toPlainText(), QStringLiteral("loaded secret body"));
-    QVERIFY(!body->isReadOnly());
-    QVERIFY(hint->isHidden());
-    QVERIFY(reveal->isHidden());
+    QVERIFY(body->isLoaded());
+    QVERIFY(body->isVisible());
+    QCOMPARE(body->content(), QStringLiteral("loaded secret body"));
     QVERIFY(save->isEnabled());
+    QVERIFY(copy->isEnabled());
+
+    copy->click();
+    QCOMPARE(QGuiApplication::clipboard()->text(),
+             QStringLiteral("loaded secret body"));
+
+    eye->click();
+    QCOMPARE(loads, 1);
+    QVERIFY(!body->isLoaded());
+    QVERIFY(body->content().isEmpty());
+    QVERIFY(!save->isEnabled());
+
+    eye->click();
+    QCOMPARE(loads, 2);
+    QVERIFY(body->isLoaded());
+    QCOMPARE(body->content(), QStringLiteral("loaded secret body"));
 
     QVERIFY(QMetaObject::invokeMethod(&dialog, "save", Qt::DirectConnection));
     QCOMPARE(dialog.result(), int(QDialog::Accepted));

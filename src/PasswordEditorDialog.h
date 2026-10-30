@@ -5,12 +5,11 @@
 
 #include <functional>
 
-class QCheckBox;
 class QComboBox;
 class QLabel;
 class QLineEdit;
-class QPlainTextEdit;
 class QPushButton;
+class EncryptedContentWidget;
 
 class PasswordEditorDialog : public QDialog
 {
@@ -49,20 +48,17 @@ private slots:
 private:
     void buildUi(bool editing);
     void setError(const QString &message);
-    bool revealSecretFields();
+    void updateSaveButton();
 
     QLineEdit *m_titleEdit = nullptr;
     QLineEdit *m_usernameEdit = nullptr;
     QLineEdit *m_urlEdit = nullptr;
-    QLineEdit *m_passwordEdit = nullptr;
-    QCheckBox *m_showPassword = nullptr;
-    QPlainTextEdit *m_notesEdit = nullptr;
+    EncryptedContentWidget *m_passwordWidget = nullptr;
+    EncryptedContentWidget *m_notesWidget = nullptr;
     QComboBox *m_classificationCombo = nullptr;
     QLabel *m_topSecretHint = nullptr;
-    QLabel *m_lockHint = nullptr;
     QLabel *m_errorLabel = nullptr;
     QPushButton *m_saveButton = nullptr;
     SecretLoader m_secretLoader;
     SaveAuthorizer m_saveAuthorizer;
-    bool m_secretRevealed = true;
 };

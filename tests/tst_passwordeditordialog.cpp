@@ -1,12 +1,13 @@
 #include "PasswordEditorDialog.h"
 
-#include <QCheckBox>
+#include "EncryptedContentWidget.h"
+
 #include <QDialogButtonBox>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMetaObject>
-#include <QPlainTextEdit>
 #include <QPushButton>
+#include <QToolButton>
 #include <QtTest>
 
 class TestPasswordEditorDialog : public QObject
@@ -33,8 +34,10 @@ void TestPasswordEditorDialog::roundTripsData()
     auto *title = dialog.findChild<QLineEdit *>(QStringLiteral("passwordTitle"));
     auto *username = dialog.findChild<QLineEdit *>(QStringLiteral("passwordUsername"));
     auto *url = dialog.findChild<QLineEdit *>(QStringLiteral("passwordUrl"));
-    auto *password = dialog.findChild<QLineEdit *>(QStringLiteral("passwordSecret"));
-    auto *notes = dialog.findChild<QPlainTextEdit *>(QStringLiteral("passwordNotes"));
+    auto *password = dialog.findChild<EncryptedContentWidget *>(
+        QStringLiteral("passwordSecretWidget"));
+    auto *notes = dialog.findChild<EncryptedContentWidget *>(
+        QStringLiteral("passwordNotesWidget"));
     QVERIFY(title);
     QVERIFY(username);
     QVERIFY(url);
@@ -44,14 +47,14 @@ void TestPasswordEditorDialog::roundTripsData()
     QCOMPARE(title->text(), initial.title);
     QCOMPARE(username->text(), initial.username);
     QCOMPARE(url->text(), initial.url);
-    QCOMPARE(password->text(), initial.password);
-    QCOMPARE(notes->toPlainText(), initial.notes);
+    QCOMPARE(password->content(), initial.password);
+    QCOMPARE(notes->content(), initial.notes);
 
     title->setText(QStringLiteral("GitHub Work"));
     username->setText(QStringLiteral("work-user"));
     url->setText(QStringLiteral("https://work.example.com"));
-    password->setText(QStringLiteral("new-secret"));
-    notes->setPlainText(QStringLiteral("updated notes"));
+    password->setContent(QStringLiteral("new-secret"), true);
+    notes->setContent(QStringLiteral("updated notes"));
 
     const PasswordEditorDialog::Data result = dialog.data();
     QCOMPARE(result.title, QStringLiteral("GitHub Work"));
@@ -64,16 +67,25 @@ void TestPasswordEditorDialog::roundTripsData()
 void TestPasswordEditorDialog::togglesPasswordVisibility()
 {
     PasswordEditorDialog dialog;
-    auto *password = dialog.findChild<QLineEdit *>(QStringLiteral("passwordSecret"));
-    auto *show = dialog.findChild<QCheckBox *>(QStringLiteral("passwordShow"));
-    QVERIFY(password);
-    QVERIFY(show);
-    QCOMPARE(password->echoMode(), QLineEdit::Password);
+    auto *widget = dialog.findChild<EncryptedContentWidget *>(
+        QStringLiteral("passwordSecretWidget"));
+    QVERIFY(widget);
+    auto *lineEdit =
+        widget->findChild<QLineEdit *>(QStringLiteral("secretLineEdit"));
+    auto *eye = widget->findChild<QToolButton *>(QStringLiteral("secretEye"));
+    QVERIFY(lineEdit);
+    QVERIFY(eye);
+    QCOMPARE(lineEdit->echoMode(), QLineEdit::Password);
+    QVERIFY(!widget->isVisible());
 
-    show->setChecked(true);
-    QCOMPARE(password->echoMode(), QLineEdit::Normal);
-    show->setChecked(false);
-    QCOMPARE(password->echoMode(), QLineEdit::Password);
+    eye->click();
+    QCOMPARE(lineEdit->echoMode(), QLineEdit::Normal);
+    QVERIFY(widget->isVisible());
+
+    eye->click();
+    QCOMPARE(lineEdit->echoMode(), QLineEdit::Password);
+    QVERIFY(!widget->isVisible());
+    QVERIFY(widget->isLoaded());
 }
 
 void TestPasswordEditorDialog::lazyLoadsSecretOnShow()
@@ -93,49 +105,56 @@ void TestPasswordEditorDialog::lazyLoadsSecretOnShow()
             return true;
         });
 
-    auto *password =
-        dialog.findChild<QLineEdit *>(QStringLiteral("passwordSecret"));
-    auto *notes =
-        dialog.findChild<QPlainTextEdit *>(QStringLiteral("passwordNotes"));
-    auto *show = dialog.findChild<QCheckBox *>(QStringLiteral("passwordShow"));
+    auto *password = dialog.findChild<EncryptedContentWidget *>(
+        QStringLiteral("passwordSecretWidget"));
+    auto *notes = dialog.findChild<EncryptedContentWidget *>(
+        QStringLiteral("passwordNotesWidget"));
     auto *save = dialog.findChild<QPushButton *>(QStringLiteral("passwordSave"));
-    auto *hint = dialog.findChild<QLabel *>(QStringLiteral("passwordLockHint"));
     QVERIFY(password);
     QVERIFY(notes);
-    QVERIFY(show);
     QVERIFY(save);
-    QVERIFY(hint);
+    auto *passwordEye =
+        password->findChild<QToolButton *>(QStringLiteral("secretEye"));
+    auto *notesEye =
+        notes->findChild<QToolButton *>(QStringLiteral("secretEye"));
+    QVERIFY(passwordEye);
+    QVERIFY(notesEye);
 
     QCOMPARE(loads, 0);
-    QVERIFY(!password->text().isEmpty());
-    QVERIFY(password->text() != QStringLiteral("loaded-secret"));
-    QVERIFY(!password->isEnabled());
-    QVERIFY(!notes->toPlainText().isEmpty());
-    QVERIFY(notes->toPlainText() != QStringLiteral("loaded notes"));
-    QVERIFY(!notes->isEnabled());
-    QVERIFY(!show->isChecked());
-    QVERIFY(!hint->isHidden());
+    QVERIFY(!password->isLoaded());
+    QVERIFY(password->content().isEmpty());
+    QVERIFY(!notes->isLoaded());
+    QVERIFY(notes->content().isEmpty());
     QVERIFY(!save->isEnabled());
 
     QVERIFY(QMetaObject::invokeMethod(&dialog, "save", Qt::DirectConnection));
     QVERIFY(dialog.result() != int(QDialog::Accepted));
 
-    show->setChecked(true);
+    passwordEye->click();
     QCOMPARE(loads, 1);
-    QCOMPARE(password->text(), QStringLiteral("loaded-secret"));
-    QCOMPARE(notes->toPlainText(), QStringLiteral("loaded notes"));
-    QVERIFY(password->isEnabled());
-    QVERIFY(notes->isEnabled());
-    QVERIFY(hint->isHidden());
+    QVERIFY(password->isLoaded());
+    QCOMPARE(password->content(), QStringLiteral("loaded-secret"));
+    QVERIFY(notes->content().isEmpty());
+    QVERIFY(!save->isEnabled());
+
+    notesEye->click();
+    QCOMPARE(loads, 2);
+    QVERIFY(notes->isLoaded());
+    QCOMPARE(notes->content(), QStringLiteral("loaded notes"));
     QVERIFY(save->isEnabled());
-    QCOMPARE(password->echoMode(), QLineEdit::Normal);
 
     QVERIFY(QMetaObject::invokeMethod(&dialog, "save", Qt::DirectConnection));
     QCOMPARE(dialog.result(), int(QDialog::Accepted));
 
-    show->setChecked(false);
-    QCOMPARE(password->echoMode(), QLineEdit::Password);
-    QCOMPARE(loads, 1);
+    passwordEye->click();
+    QVERIFY(!password->isLoaded());
+    QVERIFY(password->content().isEmpty());
+    QVERIFY(!save->isEnabled());
+
+    passwordEye->click();
+    QCOMPARE(loads, 3);
+    QVERIFY(password->isLoaded());
+    QCOMPARE(password->content(), QStringLiteral("loaded-secret"));
 }
 
 void TestPasswordEditorDialog::requiresTitle()

@@ -3,6 +3,8 @@ qt_add_library(cryptowl_ui STATIC
     CreateVaultDialog.cpp
     DeviceSecretStore.h
     DeviceSecretStore.cpp
+    EncryptedContentWidget.h
+    EncryptedContentWidget.cpp
     MainWindow.h
     MainWindow.cpp
     NoteEditorDialog.h
