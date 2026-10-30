@@ -76,15 +76,15 @@ void TestPasswordEditorDialog::togglesPasswordVisibility()
     QVERIFY(lineEdit);
     QVERIFY(eye);
     QCOMPARE(lineEdit->echoMode(), QLineEdit::Password);
-    QVERIFY(!widget->isVisible());
+    QVERIFY(!widget->isContentVisible());
 
     eye->click();
     QCOMPARE(lineEdit->echoMode(), QLineEdit::Normal);
-    QVERIFY(widget->isVisible());
+    QVERIFY(widget->isContentVisible());
 
     eye->click();
     QCOMPARE(lineEdit->echoMode(), QLineEdit::Password);
-    QVERIFY(!widget->isVisible());
+    QVERIFY(!widget->isContentVisible());
     QVERIFY(widget->isLoaded());
 }
 
@@ -113,12 +113,15 @@ void TestPasswordEditorDialog::lazyLoadsSecretOnShow()
     QVERIFY(password);
     QVERIFY(notes);
     QVERIFY(save);
+    auto *passwordUnlock =
+        password->findChild<QPushButton *>(QStringLiteral("secretUnlock"));
+    auto *notesUnlock =
+        notes->findChild<QPushButton *>(QStringLiteral("secretUnlock"));
     auto *passwordEye =
         password->findChild<QToolButton *>(QStringLiteral("secretEye"));
-    auto *notesEye =
-        notes->findChild<QToolButton *>(QStringLiteral("secretEye"));
+    QVERIFY(passwordUnlock);
+    QVERIFY(notesUnlock);
     QVERIFY(passwordEye);
-    QVERIFY(notesEye);
 
     QCOMPARE(loads, 0);
     QVERIFY(!password->isLoaded());
@@ -130,14 +133,14 @@ void TestPasswordEditorDialog::lazyLoadsSecretOnShow()
     QVERIFY(QMetaObject::invokeMethod(&dialog, "save", Qt::DirectConnection));
     QVERIFY(dialog.result() != int(QDialog::Accepted));
 
-    passwordEye->click();
+    passwordUnlock->click();
     QCOMPARE(loads, 1);
     QVERIFY(password->isLoaded());
     QCOMPARE(password->content(), QStringLiteral("loaded-secret"));
     QVERIFY(notes->content().isEmpty());
     QVERIFY(!save->isEnabled());
 
-    notesEye->click();
+    notesUnlock->click();
     QCOMPARE(loads, 2);
     QVERIFY(notes->isLoaded());
     QCOMPARE(notes->content(), QStringLiteral("loaded notes"));
@@ -151,7 +154,7 @@ void TestPasswordEditorDialog::lazyLoadsSecretOnShow()
     QVERIFY(password->content().isEmpty());
     QVERIFY(!save->isEnabled());
 
-    passwordEye->click();
+    passwordUnlock->click();
     QCOMPARE(loads, 3);
     QVERIFY(password->isLoaded());
     QCOMPARE(password->content(), QStringLiteral("loaded-secret"));

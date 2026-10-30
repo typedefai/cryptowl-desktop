@@ -85,25 +85,27 @@ void TestNoteEditorDialog::lazyLoadsContentOnReveal()
     auto *save = dialog.findChild<QPushButton *>(QStringLiteral("noteSave"));
     QVERIFY(body);
     QVERIFY(save);
+    auto *unlock = body->findChild<QPushButton *>(QStringLiteral("secretUnlock"));
     auto *eye = body->findChild<QToolButton *>(QStringLiteral("secretEye"));
     auto *copy = body->findChild<QToolButton *>(QStringLiteral("secretCopy"));
+    QVERIFY(unlock);
     QVERIFY(eye);
     QVERIFY(copy);
 
     QCOMPARE(loads, 0);
     QVERIFY(!body->isLoaded());
     QVERIFY(body->content().isEmpty());
-    QVERIFY(!eye->isHidden());
+    QVERIFY(!unlock->isHidden());
     QVERIFY(!save->isEnabled());
     QVERIFY(!copy->isEnabled());
 
     QVERIFY(QMetaObject::invokeMethod(&dialog, "save", Qt::DirectConnection));
     QVERIFY(dialog.result() != int(QDialog::Accepted));
 
-    eye->click();
+    unlock->click();
     QCOMPARE(loads, 1);
     QVERIFY(body->isLoaded());
-    QVERIFY(body->isVisible());
+    QVERIFY(body->isContentVisible());
     QCOMPARE(body->content(), QStringLiteral("loaded secret body"));
     QVERIFY(save->isEnabled());
     QVERIFY(copy->isEnabled());
@@ -118,7 +120,7 @@ void TestNoteEditorDialog::lazyLoadsContentOnReveal()
     QVERIFY(body->content().isEmpty());
     QVERIFY(!save->isEnabled());
 
-    eye->click();
+    unlock->click();
     QCOMPARE(loads, 2);
     QVERIFY(body->isLoaded());
     QCOMPARE(body->content(), QStringLiteral("loaded secret body"));
