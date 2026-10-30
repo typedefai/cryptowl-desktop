@@ -1,17 +1,16 @@
 #pragma once
 
-#include <QFrame>
+#include <QWidget>
 
 #include <functional>
 
+class QLabel;
 class QLineEdit;
 class QPlainTextEdit;
-class QPushButton;
-class QStackedLayout;
 class QToolButton;
 class QIcon;
 
-class EncryptedContentWidget : public QFrame
+class EncryptedContentWidget : public QWidget
 {
     Q_OBJECT
 
@@ -26,8 +25,8 @@ public:
 
     explicit EncryptedContentWidget(Mode mode, QWidget *parent = nullptr);
 
-    // Lazy mode: the widget shows a click-to-unlock box. Showing calls the
-    // loader; hiding wipes the value, so showing again re-loads/decrypts it.
+    // Lazy mode: the field starts masked; showing it calls the loader.
+    // Hiding wipes the current value, so showing again re-loads/decrypts it.
     void setLoader(Loader loader);
 
     // Direct mode: the value is already available (new draft or C-tier data).
@@ -39,7 +38,7 @@ public:
 
     QString content() const;
     bool isLoaded() const;
-    bool isContentVisible() const;
+    bool isVisible() const;
 
     void reveal();
     void hideContent();
@@ -53,11 +52,8 @@ signals:
 private:
     void updateControls();
     void showMaskedState();
-    void showUnlockPage();
-    void showContentPage();
     void setFieldValue(const QString &value);
     QIcon eyeIcon(bool open) const;
-    QIcon copyIcon() const;
 
     Mode m_mode;
     Loader m_loader;
@@ -66,11 +62,9 @@ private:
     bool m_readOnly = false;
     bool m_draftMasked = false;
 
-    QStackedLayout *m_stack = nullptr;
-    QPushButton *m_unlockButton = nullptr;
-    QWidget *m_contentPage = nullptr;
     QLineEdit *m_lineEdit = nullptr;
     QPlainTextEdit *m_textEdit = nullptr;
     QToolButton *m_eyeButton = nullptr;
     QToolButton *m_copyButton = nullptr;
+    QLabel *m_statusLabel = nullptr;
 };

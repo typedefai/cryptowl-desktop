@@ -124,17 +124,16 @@ logged.
 - Browser: sidebar + filter/search + list + detail; C/S/T badges; empty states
 - ✅ Note editor (C by default, S/T optional): title + text, confidentiality
   switcher, create/edit/soft-delete; the bottom pane is metadata-only; the
-  editor uses one framed content widget that shows **click to unlock** when
-  hidden. Unlocking decrypts it; hiding wipes it and requires decryption again.
-  The shown view has eye and Copy actions. C/draft content is shown directly;
-  markdown preview pending
+  editor uses one masked content widget with an eye toggle and Copy. Showing
+  S/T content decrypts it; hiding wipes it and requires decryption again.
+  C/draft content is shown directly; markdown preview pending
 - ◐ Password editor (S/T): username/url/secret/notes JSON payload, show/hide,
-  create/edit/soft-delete; password and notes each use the framed
-  click-to-unlock widget with integrated eye and Copy actions. The bottom pane
-  is metadata-only; Save stays disabled until both encrypted fields are shown,
-  and T prompts for the secondary password on every reveal and save; KEK is
-  session-scoped, generator and per-reveal master-password re-prompt pending;
-  password is never copied automatically
+  create/edit/soft-delete; password and notes each use the masked widget with
+  an eye toggle and Copy. The bottom pane is metadata-only; Save stays disabled
+  until both encrypted fields are shown, and T prompts for the secondary
+  password on every reveal and save; KEK is session-scoped, generator and
+  per-reveal master-password re-prompt pending; password is never copied
+  automatically
 - ✅ Top Secret setup action: re-enter the master password, set a secondary
   password, add `secondarySalt`, re-sign `vault.meta`, and wrap a random
   TopSecretKEK; no recovery and no biometric factor on desktop
