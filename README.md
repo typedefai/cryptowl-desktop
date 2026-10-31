@@ -14,10 +14,10 @@ Early scaffold: minimal Qt Widgets application (window, menus, Cryptomator-style
 vault home with recent vaults, password unlock against `vault.meta`,
 QtKeychain-backed device-secret migration, vault creation with a SQLCipher
 `vault.db`, S-tier password CRUD plus confidential/secret notes in a
-KeePass-style workspace, per-access Secret unlock (or remembering only the KEK
-until lock), and a vault-info dialog, smoke tests) and the byte-exact **crypto
-core** (P1) of the vault format. `config.sig` verification
-and the remaining item types are next — see
+KeePass-style workspace, remembered Secret access by default (KEK only, with an
+option to require per-access master-password prompts), and a vault-info dialog,
+smoke tests) and the byte-exact **crypto core** (P1) of the vault format.
+`config.sig` verification and the remaining item types are next — see
 [docs/implementation-plan.md](docs/implementation-plan.md).
 
 > SQLCipher **5.0.0-beta.1** is pre-release and uses v5 defaults; existing
@@ -25,16 +25,16 @@ and the remaining item types are next — see
 
 ### Secret-tier access
 
-S-tier content is locked per access by default, like the Android client: each
-reveal or save asks for the master password again, derives the vault keys,
-makes the KEK available only for that operation, and then discards it. The
-main vault session does not keep a KEK. T-tier items still require the
-secondary password on every access, and C-tier items remain directly readable.
+The unlock dialog's **Remember Secret access until lock** option is checked by
+default. It keeps only the Secret-tier KEK in memory for the current session so
+S items can be opened without re-entering the master password until the vault
+is locked. It does not remember or store the master password.
 
-The unlock dialog offers **Remember Secret access until lock**. This keeps only
-the Secret-tier KEK in memory for the current session so S items can be opened
-without re-entering the master password until the vault is locked. It does not
-remember or store the master password.
+Uncheck the option to lock S-tier content per access, like the Android client:
+each reveal or save then asks for the master password again, derives the vault
+keys, makes the KEK available only for that operation, and discards it. The
+main vault session does not keep a KEK. T-tier items still require the secondary
+password on every access, and C-tier items remain directly readable.
 
 ## Requirements
 

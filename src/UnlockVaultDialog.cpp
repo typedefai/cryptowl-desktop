@@ -51,6 +51,7 @@ UnlockVaultDialog::UnlockVaultDialog(QString vaultPath, QWidget *parent,
     m_rememberSecret = new QCheckBox(
         tr("Remember Secret access until lock"), this);
     m_rememberSecret->setObjectName(QStringLiteral("rememberSecretAccess"));
+    m_rememberSecret->setChecked(true);
     m_rememberSecret->setToolTip(
         tr("Keeps the Secret-tier key in memory for this session. "
            "Your master password is never stored."));

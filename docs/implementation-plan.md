@@ -29,7 +29,7 @@ interop beyond the vault format itself.
 | D3 | HKDF | own RFC 5869 implementation over HMAC-SHA256 | mirrors the reference line-by-line (incl. empty-salt → 32 zero bytes); trivial and vector-locked |
 | D4 | SQLCipher | SQLCipher 5.0.0-beta.1 vendored amalgamation with the OpenSSL 3.5.8 LTS provider (developer-installed) | v5 AES-256-GCM/page-size defaults, no v4 compatibility; package a compatible OpenSSL runtime; raw key expression `x'<hex>'` only |
 | D5 | UX | password-manager layout: sidebar (type filters + pinned) + search-as-you-type + item list + detail/editor | 1Password/Bitwarden pattern; `items.md`'s Explorer style stays the dev-tooling pattern |
-| D6 | Tiers on desktop | C = vault unlock; S = per-item DEK, KEK **dev-bound** to SMK; by default the KEK is not kept in the session — every S reveal/save re-enters the master password and unwraps the KEK into a temporary session. The unlock dialog can **remember Secret access until lock**, which caches the KEK only (never the master password). T = secondary password (Argon2id → TS-KEK → TopSecretKEK), re-entered per T access; setup re-enters the master password; no biometrics | matches `items.md` dev binding and `design.md` semantics; desktop T is a second password, not two-factor |
+| D6 | Tiers on desktop | C = vault unlock; S = per-item DEK, KEK **dev-bound** to SMK. The unlock dialog's **Remember Secret access until lock** is checked by default and caches the KEK only (never the master password); unchecking it makes every S reveal/save re-enter the master password and unwrap the KEK into a temporary session. T = secondary password (Argon2id → TS-KEK → TopSecretKEK), re-entered per T access; setup re-enters the master password; no biometrics | matches `items.md` dev binding and `design.md` semantics; desktop T is a second password, not two-factor |
 | D7 | Device secret | QtKeychain (macOS Keychain, Windows Credential Store, Linux Secret Service); legacy `<vault>/device_secret` (32 raw / 64 hex) migrated on first unlock | cross-platform secure-store analog to Android Keystore |
 | D8 | Byte-exactness | golden vectors pinned in tests; HMAC order `P = HMAC(key=DeviceSecret, msg=password)` | the cross-verification contract with Android/vaultlib |
 
@@ -106,9 +106,10 @@ logged.
   only folders containing `vault.meta`); `QSettings`-persisted recent vaults
   (max 10, remove from list)
 - ✅ Password unlock dialog: derive P → TMK → SMK, verify the `vault.meta` MAC,
-  unwrap `vault_key:smk`, and hold the key in memory until lock; an unchecked
-  **Remember Secret access until lock** option controls whether the S-tier KEK
-  is cached for the session (the master password itself is never stored)
+  unwrap `vault_key:smk`, and hold the key in memory until lock; a
+  checked-by-default **Remember Secret access until lock** option controls
+  whether the S-tier KEK is cached for the session (the master password itself
+  is never stored)
 - ✅ Open/create path dialog: defaults to Documents, editable path field +
   Browse, inline validation; create accepts a new folder under an existing
   parent and rejects non-empty/invalid paths
@@ -128,15 +129,15 @@ logged.
   switcher, create/edit/soft-delete; the bottom pane is metadata-only; the
   editor uses one masked content widget with an eye toggle and Copy. Showing
   S/T content decrypts it; hiding wipes it and requires decryption again. S
-  reveal/save re-enters the master password unless Secret access is remembered
-  for the session; T always re-enters the secondary password. C/draft content
-  is shown directly; markdown preview pending
+  reveal/save re-enters the master password when Secret access is not
+  remembered for the session; T always re-enters the secondary password.
+  C/draft content is shown directly; markdown preview pending
 - ◐ Password editor (S/T): username/url/secret/notes JSON payload, show/hide,
   create/edit/soft-delete; password and notes each use the masked widget with
   an eye toggle and Copy. The bottom pane is metadata-only; Save stays disabled
   until both encrypted fields are shown, and new passwords require a matching
-  confirmation entry. S reveal/save re-enters the master password unless
-  Secret access is remembered for the session; T prompts for the secondary
+  confirmation entry. S reveal/save re-enters the master password when Secret
+  access is not remembered for the session; T prompts for the secondary
   password on every reveal and save. Password is never copied automatically;
   generator pending
 - ✅ Top Secret setup action: re-enter the master password, set a secondary

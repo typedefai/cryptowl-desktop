@@ -216,12 +216,12 @@ implementation).
   64-hex-character `<vault>/device_secret` file are migrated on the first
   successful unlock and the plaintext file is removed. Once migrated, a vault
   folder is not portable by itself; export/import/rebind is pending.
-- **Secret access on desktop**: without a biometric gate, the desktop client
-  re-enters the master password for every S-tier reveal/save by default and
-  unwraps the KEK into a temporary session. The unlock dialog can cache the
-  KEK in memory until lock ("Remember Secret access"); it never stores the
-  master password. T-tier access still requires the secondary password every
-  time, and C-tier content remains directly readable.
+- **Secret access on desktop**: without a biometric gate, the unlock dialog's
+  **Remember Secret access** option is checked by default and caches the KEK in
+  memory until lock; it never stores the master password. Uncheck it to
+  re-enter the master password for every S-tier reveal/save and unwrap the KEK
+  into a temporary session. T-tier access still requires the secondary
+  password every time, and C-tier content remains directly readable.
 - **Android re-bind on import**: when a desktop-created vault is first opened
   on Android, the app derives the desktop SMK from the file + master
   password, re-wraps `vault_key:smk` with the Android SMK (Keystore Device

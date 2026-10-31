@@ -137,7 +137,7 @@ private slots:
     void migratesLegacySecretToKeychain();
     void unlockDialogAcceptsCorrectPassword();
     void unlockDialogRejectsWrongPassword();
-    void unlockDialogRememberSecretIsOptIn();
+    void unlockDialogRememberSecretDefaultsOn();
     void createDialogRequiresMatchingPasswords();
 };
 
@@ -310,7 +310,7 @@ void TestVaultUnlocker::unlockDialogRejectsWrongPassword()
     QVERIFY(!error->text().isEmpty());
 }
 
-void TestVaultUnlocker::unlockDialogRememberSecretIsOptIn()
+void TestVaultUnlocker::unlockDialogRememberSecretDefaultsOn()
 {
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
@@ -324,14 +324,14 @@ void TestVaultUnlocker::unlockDialogRememberSecretIsOptIn()
         dialog.findChild<QLabel *>(QStringLiteral("rememberSecretHelp"));
     QVERIFY(remember);
     QVERIFY(help);
-    QVERIFY(!remember->isChecked());
-    QVERIFY(!dialog.rememberSecretAccess());
+    QVERIFY(remember->isChecked());
+    QVERIFY(dialog.rememberSecretAccess());
     QVERIFY(help->text().contains(
         QStringLiteral("does not remember your master password")));
     QVERIFY(help->text().contains(QStringLiteral("until you lock")));
 
-    remember->setChecked(true);
-    QVERIFY(dialog.rememberSecretAccess());
+    remember->setChecked(false);
+    QVERIFY(!dialog.rememberSecretAccess());
 }
 
 void TestVaultUnlocker::createDialogRequiresMatchingPasswords()

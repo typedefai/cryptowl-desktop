@@ -111,9 +111,10 @@ kept from the v1 core.
   devkit a **dev binding** wraps the KEK with the SMK (`t_wrapped_key`
   role=`kek`, wrapper=`smk`) — documented dev-only convenience, since desktops
   have no fingerprint gate. The desktop app treats this as a password gate: by
-  default each S reveal/save re-enters the master password and uses the KEK
-  only for that access. The unlock dialog may cache the KEK in memory until
-  lock; it never remembers the master password.
+  default the unlock dialog remembers the KEK in memory until lock. Uncheck
+  **Remember Secret access** to re-enter the master password for each S
+  reveal/save and use the KEK only for that access. It never remembers the
+  master password.
 - Notes default to **C — Confidential** and may be escalated to
   **S — Secret**. An S note keeps `t_item.content` empty and stores its text
   in the encrypted-data payload; switching levels rewrites the item and adds
