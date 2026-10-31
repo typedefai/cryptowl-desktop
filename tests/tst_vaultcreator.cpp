@@ -97,7 +97,7 @@ void TestVaultCreator::createsUnlockableVault()
     std::string sessionError;
     auto session = cryptowl::vault::VaultSession::open(
         databasePath, std::move(unlocked.vaultKey), std::move(unlocked.smk),
-        &sessionError);
+        &sessionError, true);
     QVERIFY2(session != nullptr, sessionError.c_str());
 
     cryptowl::vault::NewItem item;

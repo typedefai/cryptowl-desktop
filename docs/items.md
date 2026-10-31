@@ -110,7 +110,10 @@ kept from the v1 core.
   by the KEK. On Android the KEK is BioKey-wrapped (per-access prompt); on the
   devkit a **dev binding** wraps the KEK with the SMK (`t_wrapped_key`
   role=`kek`, wrapper=`smk`) — documented dev-only convenience, since desktops
-  have no fingerprint gate.
+  have no fingerprint gate. The desktop app treats this as a password gate: by
+  default each S reveal/save re-enters the master password and uses the KEK
+  only for that access. The unlock dialog may cache the KEK in memory until
+  lock; it never remembers the master password.
 - Notes default to **C — Confidential** and may be escalated to
   **S — Secret**. An S note keeps `t_item.content` empty and stores its text
   in the encrypted-data payload; switching levels rewrites the item and adds

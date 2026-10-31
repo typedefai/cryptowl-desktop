@@ -48,6 +48,21 @@ UnlockVaultDialog::UnlockVaultDialog(QString vaultPath, QWidget *parent,
         m_passwordEdit->setEchoMode(checked ? QLineEdit::Normal : QLineEdit::Password);
     });
 
+    m_rememberSecret = new QCheckBox(
+        tr("Remember Secret access until lock"), this);
+    m_rememberSecret->setObjectName(QStringLiteral("rememberSecretAccess"));
+    m_rememberSecret->setToolTip(
+        tr("Keeps the Secret-tier key in memory for this session. "
+           "Your master password is never stored."));
+    auto *rememberHelp = new QLabel(
+        tr("Remembering Secret access does not remember your master password. "
+           "It keeps only the Secret-tier key in memory until you lock the "
+           "vault, so S-tier items can be opened without re-entering the "
+           "master password."),
+        this);
+    rememberHelp->setObjectName(QStringLiteral("rememberSecretHelp"));
+    rememberHelp->setWordWrap(true);
+
     m_errorLabel = new QLabel(this);
     m_errorLabel->setObjectName(QStringLiteral("vaultError"));
     m_errorLabel->setWordWrap(true);
@@ -71,6 +86,8 @@ UnlockVaultDialog::UnlockVaultDialog(QString vaultPath, QWidget *parent,
     layout->addWidget(prompt);
     layout->addWidget(m_passwordEdit);
     layout->addWidget(m_showPassword);
+    layout->addWidget(m_rememberSecret);
+    layout->addWidget(rememberHelp);
     layout->addWidget(m_errorLabel);
     layout->addWidget(buttons);
 
@@ -85,6 +102,11 @@ cryptowl::crypto::ProtectedValue UnlockVaultDialog::takeVaultKey()
 cryptowl::crypto::ProtectedValue UnlockVaultDialog::takeSmk()
 {
     return std::move(m_smk);
+}
+
+bool UnlockVaultDialog::rememberSecretAccess() const
+{
+    return m_rememberSecret && m_rememberSecret->isChecked();
 }
 
 void UnlockVaultDialog::reject()

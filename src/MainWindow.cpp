@@ -302,6 +302,7 @@ void MainWindow::unlockVault(const QString &rawPath)
 
     auto vaultKey = dialog.takeVaultKey();
     auto smk = dialog.takeSmk();
+    const bool rememberSecretAccess = dialog.rememberSecretAccess();
     if (vaultKey.empty() || smk.empty()) {
         statusBar()->showMessage(tr("Vault unlock failed: %1").arg(path));
         return;
@@ -310,7 +311,8 @@ void MainWindow::unlockVault(const QString &rawPath)
     std::string sessionError;
     auto session = cryptowl::vault::VaultSession::open(
         QDir(path).filePath(QStringLiteral("vault.db")).toUtf8().toStdString(),
-        std::move(vaultKey), std::move(smk), &sessionError);
+        std::move(vaultKey), std::move(smk), &sessionError,
+        rememberSecretAccess);
     if (!session) {
         QMessageBox::critical(
             this, tr("Could not open vault database"),

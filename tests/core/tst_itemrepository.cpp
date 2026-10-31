@@ -31,11 +31,12 @@ const Bytes kSmk(64, 0x33);
 
 std::unique_ptr<VaultSession> openSession(const QString &databasePath,
                                           const Bytes &smk = kSmk,
-                                          std::string *error = nullptr)
+                                          std::string *error = nullptr,
+                                          bool rememberKek = true)
 {
     return VaultSession::open(databasePath.toStdString(),
                               ProtectedValue(Bytes(kVaultKey)),
-                              ProtectedValue(Bytes(smk)), error);
+                              ProtectedValue(Bytes(smk)), error, rememberKek);
 }
 
 NewItem passwordItem(const std::string &title, const std::string &username,
@@ -94,6 +95,7 @@ private slots:
     void crudRoundTrip();
     void noteTierRoundTrip();
     void topSecretRoundTrip();
+    void sessionWithoutKekKeepsSecretItemsLocked();
     void preservesItemsAcrossSessions();
     void rejectsWrongSmk();
 };
@@ -281,6 +283,92 @@ void TestItemRepository::topSecretRoundTrip()
     QVERIFY2(repository.get(id, &record, &error), error.c_str());
     QCOMPARE(QString::fromStdString(record.payload),
              QStringLiteral("top now secret"));
+}
+
+void TestItemRepository::sessionWithoutKekKeepsSecretItemsLocked()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString databasePath = dir.filePath(QStringLiteral("vault.db"));
+    QVERIFY(VaultDatabase::create(databasePath.toStdString(), kVaultKey));
+
+    std::string error;
+    auto session = openSession(databasePath, kSmk, &error, false);
+    QVERIFY2(session != nullptr, error.c_str());
+    QVERIFY(!session->hasKek());
+    QCOMPARE(scalarInt(session->handle(),
+                       "SELECT count(*) FROM t_wrapped_key WHERE id = 'kek:smk';"),
+             0);
+
+    std::string confidentialId;
+    QVERIFY2(session->items().create(
+                 noteItem("Public", "public body", "C"), &confidentialId, &error),
+             error.c_str());
+    ItemRecord record;
+    QVERIFY2(session->items().get(confidentialId, &record, &error),
+             error.c_str());
+    QCOMPARE(QString::fromStdString(record.payload),
+             QStringLiteral("public body"));
+
+    const Bytes topSecretKek(32, 0x77);
+    std::string topSecretId;
+    QVERIFY2(session->items().create(noteItem("Top", "top body", "T"),
+                                     topSecretKek, &topSecretId, &error),
+             error.c_str());
+    QVERIFY2(session->items().get(topSecretId, topSecretKek, &record, &error),
+             error.c_str());
+    QCOMPARE(QString::fromStdString(record.payload), QStringLiteral("top body"));
+
+    std::string secretId;
+    QVERIFY2(!session->items().create(noteItem("Secret", "secret body", "S"),
+                                      &secretId, &error),
+             "S creation must require a session KEK");
+    QVERIFY(!session->hasKek());
+
+    {
+        auto remembered = openSession(databasePath, kSmk, &error, true);
+        QVERIFY2(remembered != nullptr, error.c_str());
+        QVERIFY(remembered->hasKek());
+        QVERIFY2(remembered->items().create(
+                     noteItem("Secret", "secret body", "S"), &secretId, &error),
+                 error.c_str());
+    }
+
+    QVERIFY(!session->hasKek());
+    QVERIFY(!session->items().get(secretId, &record, &error));
+    QVERIFY(error.find("unavailable") != std::string::npos);
+
+    ItemUpdate makePublic;
+    makePublic.title = "Secret";
+    makePublic.classification = "C";
+    makePublic.meta = "{}";
+    makePublic.payload = "now public";
+    QVERIFY2(session->items().update(secretId, makePublic, &error),
+             error.c_str());
+    QVERIFY2(session->items().get(secretId, &record, &error), error.c_str());
+    QCOMPARE(QString::fromStdString(record.payload),
+             QStringLiteral("now public"));
+
+    ItemUpdate makeTopSecret;
+    makeTopSecret.title = "Secret";
+    makeTopSecret.classification = "T";
+    makeTopSecret.meta = "{}";
+    makeTopSecret.payload = "now top secret";
+    QVERIFY2(session->items().update(secretId, makeTopSecret, topSecretKek,
+                                     &error),
+             error.c_str());
+    QVERIFY2(session->items().get(secretId, topSecretKek, &record, &error),
+             error.c_str());
+    QCOMPARE(QString::fromStdString(record.payload),
+             QStringLiteral("now top secret"));
+
+    makePublic.payload = "public again";
+    QVERIFY2(session->items().update(secretId, makePublic, topSecretKek,
+                                     &error),
+             error.c_str());
+    QVERIFY2(session->items().get(secretId, &record, &error), error.c_str());
+    QCOMPARE(QString::fromStdString(record.payload),
+             QStringLiteral("public again"));
 }
 
 void TestItemRepository::preservesItemsAcrossSessions()

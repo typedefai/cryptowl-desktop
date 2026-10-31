@@ -115,8 +115,9 @@ void TestTopSecret::setupUnlockAndUseTopSecret()
     QVERIFY2(sessionUnlock.ok, qPrintable(sessionUnlock.error));
     auto session = cryptowl::vault::VaultSession::open(
         databasePath.toStdString(), std::move(sessionUnlock.vaultKey),
-        std::move(sessionUnlock.smk), &dbError);
+        std::move(sessionUnlock.smk), &dbError, false);
     QVERIFY2(session != nullptr, dbError.c_str());
+    QVERIFY(!session->hasKek());
 
     cryptowl::vault::NewItem item;
     item.type = "plain";

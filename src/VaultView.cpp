@@ -2,16 +2,21 @@
 
 #include "NoteEditorDialog.h"
 #include "PasswordEditorDialog.h"
+#include "SecretAccessDialog.h"
 #include "TopSecretDialog.h"
 #include "TopSecretService.h"
+#include "VaultUnlocker.h"
 #include "crypto/ProtectedValue.h"
 #include "vault/ItemRepository.h"
 #include "vault/VaultSession.h"
 
 #include <QAbstractItemView>
 #include <QAction>
+#include <QApplication>
 #include <QClipboard>
 #include <QDateTime>
+#include <QDir>
+#include <QEventLoop>
 #include <QFont>
 #include <QGuiApplication>
 #include <QHeaderView>
@@ -38,9 +43,11 @@
 namespace {
 
 using cryptowl::vault::ItemRecord;
+using cryptowl::vault::ItemRepository;
 using cryptowl::vault::ItemSummary;
 using cryptowl::vault::ItemUpdate;
 using cryptowl::vault::NewItem;
+using cryptowl::vault::VaultSession;
 
 constexpr const char *kPasswordType = "password";
 constexpr const char *kNoteType = "plain";
@@ -479,6 +486,97 @@ void VaultView::updateInfo()
     emit statusMessage(tr("Selected: %1").arg(row->title));
 }
 
+bool VaultView::openSecretSession(
+    std::unique_ptr<cryptowl::vault::VaultSession> *session, QString *error)
+{
+    // Per-access S unlock: the main session intentionally has no KEK. Re-enter
+    // the master password, derive a temporary session, and destroy it after the
+    // operation. "Remember Secret access" uses the main session instead.
+    if (session)
+        session->reset();
+    if (!m_session) {
+        if (error)
+            *error = tr("Vault data is unavailable.");
+        return false;
+    }
+    if (m_session->hasKek())
+        return true;
+
+    while (true) {
+        QWidget *promptParent = QApplication::activeModalWidget();
+        if (!promptParent)
+            promptParent = this;
+        SecretAccessDialog dialog(promptParent);
+        if (dialog.exec() != QDialog::Accepted) {
+            if (error)
+                error->clear();
+            return false;
+        }
+
+        QString password = dialog.takePassword();
+        QApplication::setOverrideCursor(Qt::WaitCursor);
+        QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+        auto unlocked = VaultUnlocker::unlock(m_vaultPath, password, false);
+        password.fill(QLatin1Char('\0'));
+        QApplication::restoreOverrideCursor();
+
+        if (!unlocked.ok) {
+            QMessageBox::warning(
+                promptParent, tr("Secret access"),
+                unlocked.error.isEmpty()
+                    ? tr("Could not verify the master password.")
+                    : unlocked.error);
+            continue;
+        }
+
+        std::string sessionError;
+        auto temporary = VaultSession::open(
+            QDir(m_vaultPath).filePath(QStringLiteral("vault.db"))
+                .toUtf8()
+                .toStdString(),
+            std::move(unlocked.vaultKey), std::move(unlocked.smk),
+            &sessionError, true);
+        if (!temporary) {
+            if (error) {
+                *error = sessionError.empty()
+                    ? tr("Could not open a Secret access session.")
+                    : QString::fromStdString(sessionError);
+            }
+            return false;
+        }
+        if (session)
+            *session = std::move(temporary);
+        return true;
+    }
+}
+
+bool VaultView::withSecretItems(
+    const std::function<bool(cryptowl::vault::ItemRepository &,
+                             std::string *)> &operation,
+    std::string *error)
+{
+    if (!m_session) {
+        if (error)
+            *error = "vault data is unavailable";
+        return false;
+    }
+    if (m_session->hasKek())
+        return operation(m_session->items(), error);
+
+    std::unique_ptr<cryptowl::vault::VaultSession> temporary;
+    QString promptError;
+    if (!openSecretSession(&temporary, &promptError)) {
+        if (error)
+            *error = promptError.isEmpty()
+                ? "Secret access was canceled"
+                : promptError.toStdString();
+        return false;
+    }
+    if (temporary)
+        return operation(temporary->items(), error);
+    return operation(m_session->items(), error);
+}
+
 bool VaultView::topSecretConfigured() const
 {
     if (!m_session)
@@ -677,9 +775,23 @@ void VaultView::addEntry()
     PasswordEditorDialog dialog(this);
     dialog.setTopSecretAvailable(topSecretConfigured());
     cryptowl::crypto::ProtectedValue topSecretKek;
+    std::unique_ptr<cryptowl::vault::VaultSession> secretSession;
     dialog.setSaveAuthorizer(
-        [this, &topSecretKek](const PasswordEditorDialog::Data &data,
-                              QString *error) {
+        [this, &topSecretKek,
+         &secretSession](const PasswordEditorDialog::Data &data,
+                         QString *error) {
+            if (data.classification == QLatin1String("S")
+                && m_session && !m_session->hasKek()) {
+                QString secretError;
+                if (!openSecretSession(&secretSession, &secretError)) {
+                    if (error) {
+                        *error = secretError.isEmpty()
+                            ? tr("Secret access was canceled.")
+                            : secretError;
+                    }
+                    return false;
+                }
+            }
             if (data.classification != QLatin1String("T"))
                 return true;
             return authorizeTopSecret(&topSecretKek, error);
@@ -689,6 +801,7 @@ void VaultView::addEntry()
 
     PasswordEditorDialog::Data data = dialog.data();
     const bool topSecret = data.classification == QLatin1String("T");
+    const bool secret = data.classification == QLatin1String("S");
     QByteArray meta = passwordMeta(data);
     QByteArray payload = passwordPayload(data);
 
@@ -701,11 +814,14 @@ void VaultView::addEntry()
 
     std::string id;
     std::string error;
+    ItemRepository &repository =
+        (secret && secretSession) ? secretSession->items() : m_session->items();
     const bool created =
         topSecret
-        ? m_session->items().create(item, topSecretKek.span(), &id, &error)
-        : m_session->items().create(item, &id, &error);
+        ? repository.create(item, topSecretKek.span(), &id, &error)
+        : repository.create(item, &id, &error);
     topSecretKek.clear();
+    secretSession.reset();
 
     wipe(item.payload);
     wipe(data.password);
@@ -731,9 +847,23 @@ void VaultView::addNote()
     NoteEditorDialog dialog(this);
     dialog.setTopSecretAvailable(topSecretConfigured());
     cryptowl::crypto::ProtectedValue topSecretKek;
+    std::unique_ptr<cryptowl::vault::VaultSession> secretSession;
     dialog.setSaveAuthorizer(
-        [this, &topSecretKek](const NoteEditorDialog::Data &data,
-                              QString *error) {
+        [this, &topSecretKek,
+         &secretSession](const NoteEditorDialog::Data &data,
+                         QString *error) {
+            if (data.classification == QLatin1String("S")
+                && m_session && !m_session->hasKek()) {
+                QString secretError;
+                if (!openSecretSession(&secretSession, &secretError)) {
+                    if (error) {
+                        *error = secretError.isEmpty()
+                            ? tr("Secret access was canceled.")
+                            : secretError;
+                    }
+                    return false;
+                }
+            }
             if (data.classification != QLatin1String("T"))
                 return true;
             return authorizeTopSecret(&topSecretKek, error);
@@ -748,6 +878,7 @@ void VaultView::addNote()
     }
 
     const bool topSecret = data.classification == QLatin1String("T");
+    const bool secret = data.classification == QLatin1String("S");
     NewItem item;
     item.type = kNoteType;
     item.classification = data.classification.toStdString();
@@ -757,11 +888,14 @@ void VaultView::addNote()
 
     std::string id;
     std::string error;
+    ItemRepository &repository =
+        (secret && secretSession) ? secretSession->items() : m_session->items();
     const bool created =
         topSecret
-        ? m_session->items().create(item, topSecretKek.span(), &id, &error)
-        : m_session->items().create(item, &id, &error);
+        ? repository.create(item, topSecretKek.span(), &id, &error)
+        : repository.create(item, &id, &error);
     topSecretKek.clear();
+    secretSession.reset();
 
     wipe(item.payload);
     wipe(data.body);
@@ -805,6 +939,7 @@ void VaultView::editSelectedPassword()
         return;
 
     const bool wasTopSecret = row->classification == QLatin1String("T");
+    const bool wasSecret = row->classification == QLatin1String("S");
     PasswordEditorDialog::Data data;
     data.title = row->title;
     data.username = row->username;
@@ -832,22 +967,24 @@ void VaultView::editSelectedPassword()
             return true;
         };
     } else if (row->classification == QLatin1String("S")) {
-        const auto session = m_session;
-        const std::string itemId = id.toStdString();
-        loader = [session, itemId](QString *password, QString *notes,
-                                   QString *error) {
-            ItemRecord record;
+        loader = [this, id](QString *password, QString *notes, QString *error) {
             std::string recordError;
-            if (!session->items().get(itemId, &record, &recordError)) {
-                if (error)
-                    *error = QString::fromStdString(recordError);
-                return false;
-            }
-            const QJsonObject payload = parseJsonObject(record.payload);
-            *password = jsonString(payload, QStringLiteral("secret"));
-            *notes = jsonString(payload, QStringLiteral("notes"));
-            wipe(record.payload);
-            return true;
+            const bool ok = withSecretItems(
+                [this, id, password, notes](ItemRepository &repository,
+                                            std::string *innerError) {
+                    ItemRecord record;
+                    if (!repository.get(id.toStdString(), &record, innerError))
+                        return false;
+                    const QJsonObject payload = parseJsonObject(record.payload);
+                    *password = jsonString(payload, QStringLiteral("secret"));
+                    *notes = jsonString(payload, QStringLiteral("notes"));
+                    wipe(record.payload);
+                    return true;
+                },
+                &recordError);
+            if (!ok && error)
+                *error = QString::fromStdString(recordError);
+            return ok;
         };
     } else {
         ItemRecord record;
@@ -866,9 +1003,23 @@ void VaultView::editSelectedPassword()
     PasswordEditorDialog dialog(data, std::move(loader), this);
     dialog.setTopSecretAvailable(topSecretConfigured());
     cryptowl::crypto::ProtectedValue saveKek;
+    std::unique_ptr<cryptowl::vault::VaultSession> secretSession;
     dialog.setSaveAuthorizer(
-        [this, wasTopSecret, &saveKek](const PasswordEditorDialog::Data &data,
-                                       QString *error) {
+        [this, wasTopSecret, wasSecret, &saveKek,
+         &secretSession](const PasswordEditorDialog::Data &data, QString *error) {
+            const bool needsSecretAccess =
+                wasSecret || data.classification == QLatin1String("S");
+            if (needsSecretAccess && m_session && !m_session->hasKek()) {
+                QString secretError;
+                if (!openSecretSession(&secretSession, &secretError)) {
+                    if (error) {
+                        *error = secretError.isEmpty()
+                            ? tr("Secret access was canceled.")
+                            : secretError;
+                    }
+                    return false;
+                }
+            }
             if (!wasTopSecret && data.classification != QLatin1String("T"))
                 return true;
             return authorizeTopSecret(&saveKek, error);
@@ -880,6 +1031,7 @@ void VaultView::editSelectedPassword()
     std::string error;
     data = dialog.data();
     const bool desiredTopSecret = data.classification == QLatin1String("T");
+    const bool desiredSecret = data.classification == QLatin1String("S");
     QByteArray metaJson = passwordMeta(data);
     QByteArray payloadJson = passwordPayload(data);
 
@@ -889,11 +1041,15 @@ void VaultView::editSelectedPassword()
     update.meta = metaJson.toStdString();
     update.payload = payloadJson.toStdString();
 
+    ItemRepository &repository =
+        (desiredSecret && secretSession) ? secretSession->items()
+                                         : m_session->items();
     const bool updated =
         (wasTopSecret || desiredTopSecret)
-        ? m_session->items().update(id.toStdString(), update, saveKek.span(), &error)
-        : m_session->items().update(id.toStdString(), update, &error);
+        ? repository.update(id.toStdString(), update, saveKek.span(), &error)
+        : repository.update(id.toStdString(), update, &error);
     saveKek.clear();
+    secretSession.reset();
 
     wipe(update.payload);
     wipe(data.password);
@@ -920,6 +1076,7 @@ void VaultView::editSelectedNote()
         return;
 
     const bool wasTopSecret = row->classification == QLatin1String("T");
+    const bool wasSecret = row->classification == QLatin1String("S");
     NoteEditorDialog::Data data;
     data.title = row->title;
     if (wasTopSecret)
@@ -948,19 +1105,22 @@ void VaultView::editSelectedNote()
             return true;
         };
     } else if (row->classification == QLatin1String("S")) {
-        const auto session = m_session;
-        const std::string itemId = id.toStdString();
-        loader = [session, itemId](QString *body, QString *error) {
-            ItemRecord record;
+        loader = [this, id](QString *body, QString *error) {
             std::string recordError;
-            if (!session->items().get(itemId, &record, &recordError)) {
-                if (error)
-                    *error = QString::fromStdString(recordError);
-                return false;
-            }
-            *body = QString::fromStdString(record.payload);
-            wipe(record.payload);
-            return true;
+            const bool ok = withSecretItems(
+                [this, id, body](ItemRepository &repository,
+                                 std::string *innerError) {
+                    ItemRecord record;
+                    if (!repository.get(id.toStdString(), &record, innerError))
+                        return false;
+                    *body = QString::fromStdString(record.payload);
+                    wipe(record.payload);
+                    return true;
+                },
+                &recordError);
+            if (!ok && error)
+                *error = QString::fromStdString(recordError);
+            return ok;
         };
     } else {
         ItemRecord record;
@@ -977,9 +1137,23 @@ void VaultView::editSelectedNote()
     NoteEditorDialog dialog(data, std::move(loader), this);
     dialog.setTopSecretAvailable(topSecretConfigured());
     cryptowl::crypto::ProtectedValue saveKek;
+    std::unique_ptr<cryptowl::vault::VaultSession> secretSession;
     dialog.setSaveAuthorizer(
-        [this, wasTopSecret, &saveKek](const NoteEditorDialog::Data &data,
-                                       QString *error) {
+        [this, wasTopSecret, wasSecret, &saveKek,
+         &secretSession](const NoteEditorDialog::Data &data, QString *error) {
+            const bool needsSecretAccess =
+                wasSecret || data.classification == QLatin1String("S");
+            if (needsSecretAccess && m_session && !m_session->hasKek()) {
+                QString secretError;
+                if (!openSecretSession(&secretSession, &secretError)) {
+                    if (error) {
+                        *error = secretError.isEmpty()
+                            ? tr("Secret access was canceled.")
+                            : secretError;
+                    }
+                    return false;
+                }
+            }
             if (!wasTopSecret && data.classification != QLatin1String("T"))
                 return true;
             return authorizeTopSecret(&saveKek, error);
@@ -995,6 +1169,7 @@ void VaultView::editSelectedNote()
         data.classification = QStringLiteral("C");
     }
     const bool desiredTopSecret = data.classification == QLatin1String("T");
+    const bool desiredSecret = data.classification == QLatin1String("S");
 
     ItemUpdate update;
     update.title = data.title.toStdString();
@@ -1002,11 +1177,15 @@ void VaultView::editSelectedNote()
     update.meta = "{}";
     update.payload = data.body.toStdString();
 
+    ItemRepository &repository =
+        (desiredSecret && secretSession) ? secretSession->items()
+                                         : m_session->items();
     const bool updated =
         (wasTopSecret || desiredTopSecret)
-        ? m_session->items().update(id.toStdString(), update, saveKek.span(), &error)
-        : m_session->items().update(id.toStdString(), update, &error);
+        ? repository.update(id.toStdString(), update, saveKek.span(), &error)
+        : repository.update(id.toStdString(), update, &error);
     saveKek.clear();
+    secretSession.reset();
 
     wipe(update.payload);
     wipe(data.body);

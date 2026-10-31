@@ -4,7 +4,9 @@
 #include <QString>
 #include <QWidget>
 
+#include <functional>
 #include <memory>
+#include <string>
 
 class QAbstractItemView;
 class QListWidget;
@@ -18,6 +20,7 @@ class ProtectedValue;
 }
 
 namespace cryptowl::vault {
+class ItemRepository;
 class VaultSession;
 }
 
@@ -68,6 +71,13 @@ private:
     void showContextMenu(QAbstractItemView *view, const QPoint &pos);
     void editSelectedPassword();
     void editSelectedNote();
+    bool openSecretSession(
+        std::unique_ptr<cryptowl::vault::VaultSession> *session,
+        QString *error);
+    bool withSecretItems(
+        const std::function<bool(cryptowl::vault::ItemRepository &,
+                                 std::string *)> &operation,
+        std::string *error);
     bool topSecretConfigured() const;
     bool authorizeTopSecret(cryptowl::crypto::ProtectedValue *topSecretKek,
                             QString *error);

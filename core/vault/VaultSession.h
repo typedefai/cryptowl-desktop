@@ -13,10 +13,14 @@ class ItemRepository;
 class VaultSession
 {
 public:
+    // With rememberKek=false the KEK is neither unwrapped nor cached; S-tier
+    // operations must use a temporary session opened for that access. The
+    // master password / SMK is never retained by the session.
     static std::unique_ptr<VaultSession> open(const std::string &databasePath,
                                               crypto::ProtectedValue vaultKey,
                                               crypto::ProtectedValue smk,
-                                              std::string *error = nullptr);
+                                              std::string *error = nullptr,
+                                              bool rememberKek = false);
 
     ~VaultSession();
     VaultSession(const VaultSession &) = delete;
@@ -24,6 +28,11 @@ public:
 
     ItemRepository &items();
     const ItemRepository &items() const;
+
+    bool hasKek() const
+    {
+        return !m_kek.empty();
+    }
 
     sqlite3 *handle() const
     {

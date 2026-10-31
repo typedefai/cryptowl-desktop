@@ -658,10 +658,6 @@ bool ItemRepository::create(const NewItem &item,
         setError(error, "database is not open");
         return false;
     }
-    if (m_kek.size() != 32) {
-        setError(error, "vault key encryption key is unavailable");
-        return false;
-    }
     if (item.type.empty() || item.title.empty()) {
         setError(error, "item type and title are required");
         return false;
@@ -673,7 +669,7 @@ bool ItemRepository::create(const NewItem &item,
     }
     const bool secret = item.classification != "C";
     const bool topSecret = item.classification == "T";
-    if (secret && m_kek.size() != 32) {
+    if (item.classification == "S" && m_kek.size() != 32) {
         setError(error, "vault key encryption key is unavailable");
         return false;
     }

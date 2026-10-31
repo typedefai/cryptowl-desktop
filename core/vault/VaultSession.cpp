@@ -278,7 +278,8 @@ VaultSession::~VaultSession() = default;
 std::unique_ptr<VaultSession> VaultSession::open(const std::string &databasePath,
                                                  ProtectedValue vaultKey,
                                                  ProtectedValue smk,
-                                                 std::string *error)
+                                                 std::string *error,
+                                                 bool rememberKek)
 {
     if (vaultKey.size() != 32) {
         setError(error, "vault key must be 32 bytes");
@@ -295,11 +296,15 @@ std::unique_ptr<VaultSession> VaultSession::open(const std::string &databasePath
         return nullptr;
 
     ProtectedValue kek;
-    if (!loadOrCreateKek(session->m_database, smk.span(), &kek, error))
-        return nullptr;
-
-    CRYPTOWL_TRACE_NOTE("vault session ready (KEK and VaultKey loaded)");
-    CRYPTOWL_TRACE_SECRET("key.kek", kek.span());
+    if (rememberKek) {
+        if (!loadOrCreateKek(session->m_database, smk.span(), &kek, error))
+            return nullptr;
+        CRYPTOWL_TRACE_NOTE("vault session ready (KEK and VaultKey loaded)");
+        CRYPTOWL_TRACE_SECRET("key.kek", kek.span());
+    } else {
+        CRYPTOWL_TRACE_NOTE(
+            "vault session ready (VaultKey loaded; KEK not cached)");
+    }
     CRYPTOWL_TRACE_SECRET("key.vault_key", vaultKey.span());
 
     session->m_vaultKey = std::move(vaultKey);

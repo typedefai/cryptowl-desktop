@@ -9,6 +9,7 @@
 #include "crypto/Crockford32.h"
 #include "crypto/Hash.h"
 
+#include <QCheckBox>
 #include <QDialog>
 #include <QDir>
 #include <QFile>
@@ -136,6 +137,7 @@ private slots:
     void migratesLegacySecretToKeychain();
     void unlockDialogAcceptsCorrectPassword();
     void unlockDialogRejectsWrongPassword();
+    void unlockDialogRememberSecretIsOptIn();
     void createDialogRequiresMatchingPasswords();
 };
 
@@ -306,6 +308,30 @@ void TestVaultUnlocker::unlockDialogRejectsWrongPassword()
     auto *error = dialog.findChild<QLabel *>(QStringLiteral("vaultError"));
     QVERIFY(error);
     QVERIFY(!error->text().isEmpty());
+}
+
+void TestVaultUnlocker::unlockDialogRememberSecretIsOptIn()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString vault = createVault(dir.path());
+    QVERIFY(!vault.isEmpty());
+
+    UnlockVaultDialog dialog(vault, nullptr, false);
+    auto *remember =
+        dialog.findChild<QCheckBox *>(QStringLiteral("rememberSecretAccess"));
+    auto *help =
+        dialog.findChild<QLabel *>(QStringLiteral("rememberSecretHelp"));
+    QVERIFY(remember);
+    QVERIFY(help);
+    QVERIFY(!remember->isChecked());
+    QVERIFY(!dialog.rememberSecretAccess());
+    QVERIFY(help->text().contains(
+        QStringLiteral("does not remember your master password")));
+    QVERIFY(help->text().contains(QStringLiteral("until you lock")));
+
+    remember->setChecked(true);
+    QVERIFY(dialog.rememberSecretAccess());
 }
 
 void TestVaultUnlocker::createDialogRequiresMatchingPasswords()

@@ -11,6 +11,7 @@
 #include "vault/VaultSession.h"
 
 #include <QApplication>
+#include <QComboBox>
 #include <QDialog>
 #include <QDir>
 #include <QFile>
@@ -27,11 +28,13 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 using cryptowl::crypto::Bytes;
 using cryptowl::crypto::ProtectedValue;
 using cryptowl::vault::ItemRecord;
 using cryptowl::vault::ItemRepository;
+using cryptowl::vault::ItemSummary;
 using cryptowl::vault::NewItem;
 using cryptowl::vault::VaultDatabase;
 using cryptowl::vault::VaultSession;
@@ -46,7 +49,7 @@ std::shared_ptr<VaultSession> openSession(const QString &databasePath,
 {
     auto session = VaultSession::open(
         databasePath.toStdString(), ProtectedValue(Bytes(kVaultKey)),
-        ProtectedValue(Bytes(kSmk)), error);
+        ProtectedValue(Bytes(kSmk)), error, true);
     return std::shared_ptr<VaultSession>(std::move(session));
 }
 
@@ -88,6 +91,7 @@ private slots:
     void showsNotesAndFiltersByType();
     void editorsLoadSecretsLazily();
     void topSecretRevealAndEditor();
+    void secretAccessRequiresPasswordEachTime();
     void filtersPasswords();
     void switchesToIconView();
 };
@@ -444,7 +448,7 @@ void TestVaultView::topSecretRevealAndEditor()
     QVERIFY2(sessionUnlock.ok, qPrintable(sessionUnlock.error));
     auto session = VaultSession::open(
         databasePath.toStdString(), std::move(sessionUnlock.vaultKey),
-        std::move(sessionUnlock.smk), &databaseError);
+        std::move(sessionUnlock.smk), &databaseError, true);
     QVERIFY2(session != nullptr, databaseError.c_str());
     auto sharedSession = std::shared_ptr<VaultSession>(std::move(session));
 
@@ -625,6 +629,344 @@ void TestVaultView::topSecretRevealAndEditor()
              itemError.c_str());
     QVERIFY(record.payload.find("edited top notes") != std::string::npos);
     QVERIFY(record.payload.find("top-secret") != std::string::npos);
+}
+
+void TestVaultView::secretAccessRequiresPasswordEachTime()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString vault = QDir(dir.path()).filePath(QStringLiteral("personal"));
+    QVERIFY(QDir().mkpath(vault));
+
+    Bytes deviceSecret;
+    const auto created = VaultCreator::create(
+        vault, QStringLiteral("master-password"),
+        [&deviceSecret](const QString &, std::span<const std::uint8_t>,
+                        std::span<const std::uint8_t> secret, QString *) {
+            deviceSecret.assign(secret.begin(), secret.end());
+            return true;
+        });
+    QVERIFY2(created.ok, qPrintable(created.error));
+
+    QFile secretFile(QDir(vault).filePath(QStringLiteral("device_secret")));
+    QVERIFY(secretFile.open(QIODevice::WriteOnly));
+    QCOMPARE(secretFile.write(reinterpret_cast<const char *>(deviceSecret.data()),
+                              static_cast<qint64>(deviceSecret.size())),
+             static_cast<qint64>(deviceSecret.size()));
+    secretFile.close();
+
+    const QString databasePath = QDir(vault).filePath(QStringLiteral("vault.db"));
+    std::string databaseError;
+    std::string noteId;
+    std::string passwordId;
+    {
+        auto unlocked =
+            VaultUnlocker::unlock(vault, QStringLiteral("master-password"), false);
+        QVERIFY2(unlocked.ok, qPrintable(unlocked.error));
+        auto setup = VaultSession::open(
+            databasePath.toStdString(), std::move(unlocked.vaultKey),
+            std::move(unlocked.smk), &databaseError, true);
+        QVERIFY2(setup != nullptr, databaseError.c_str());
+        QVERIFY2(setup->items().create(
+                     noteItem("Private", "secret note body", "S"), &noteId,
+                     &databaseError),
+                 databaseError.c_str());
+        QVERIFY2(setup->items().create(
+                     passwordItem("Secret Login", "user", "mock-secret"),
+                     &passwordId, &databaseError),
+                 databaseError.c_str());
+    }
+
+    auto unlocked =
+        VaultUnlocker::unlock(vault, QStringLiteral("master-password"), false);
+    QVERIFY2(unlocked.ok, qPrintable(unlocked.error));
+    auto session = VaultSession::open(
+        databasePath.toStdString(), std::move(unlocked.vaultKey),
+        std::move(unlocked.smk), &databaseError, false);
+    QVERIFY2(session != nullptr, databaseError.c_str());
+    QVERIFY(!session->hasKek());
+    auto sharedSession = std::shared_ptr<VaultSession>(std::move(session));
+
+    VaultView view(vault, sharedSession);
+    auto *details = view.findChild<QTreeWidget *>(QStringLiteral("vaultDetails"));
+    QVERIFY(details);
+
+    const auto select = [details](const QString &title) {
+        for (int i = 0; i < details->topLevelItemCount(); ++i) {
+            if (details->topLevelItem(i)->text(0) == title) {
+                details->setCurrentItem(details->topLevelItem(i));
+                return true;
+            }
+        }
+        return false;
+    };
+    QVERIFY(select(QStringLiteral("Private")));
+
+    QString failure;
+    int prompts = 0;
+    const auto scheduleSecretAccess = [&failure, &prompts] {
+        QTimer::singleShot(0, [&failure, &prompts] {
+            auto *dialog =
+                qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            if (!dialog) {
+                failure = QStringLiteral("Secret access dialog not found");
+                return;
+            }
+            auto *password =
+                dialog->findChild<QLineEdit *>(QStringLiteral("secretAccessPassword"));
+            auto *button =
+                dialog->findChild<QPushButton *>(QStringLiteral("secretAccessUnlock"));
+            if (!password || !button) {
+                failure = QStringLiteral("Secret access widgets missing");
+                dialog->reject();
+                return;
+            }
+            ++prompts;
+            password->setText(QStringLiteral("master-password"));
+            button->click();
+            if (dialog->isVisible()) {
+                if (failure.isEmpty())
+                    failure = QStringLiteral("Secret access unlock failed");
+                dialog->reject();
+            }
+        });
+    };
+
+    QTimer::singleShot(0, [&] {
+        auto *editor = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+        if (!editor) {
+            failure = QStringLiteral("note editor not found");
+            return;
+        }
+        auto *body = editor->findChild<EncryptedContentWidget *>(
+            QStringLiteral("noteBodyWidget"));
+        auto *save = editor->findChild<QPushButton *>(QStringLiteral("noteSave"));
+        if (!body || !save) {
+            failure = QStringLiteral("note editor widgets missing");
+            editor->reject();
+            return;
+        }
+        auto *eye = body->findChild<QToolButton *>(QStringLiteral("secretEye"));
+        if (!eye) {
+            failure = QStringLiteral("Secret note eye missing");
+            editor->reject();
+            return;
+        }
+        if (body->isLoaded() || !body->content().isEmpty())
+            failure = QStringLiteral("Secret note was loaded before reveal");
+        if (save->isEnabled())
+            failure = QStringLiteral("Secret note save was enabled");
+
+        scheduleSecretAccess();
+        eye->click();
+        if (body->content() != QStringLiteral("secret note body"))
+            failure = QStringLiteral("Secret note reveal failed");
+        if (prompts != 1)
+            failure = QStringLiteral("Secret note reveal did not prompt");
+
+        eye->click();
+        if (!body->content().isEmpty())
+            failure = QStringLiteral("Secret note hide did not clear content");
+        scheduleSecretAccess();
+        eye->click();
+        if (body->content() != QStringLiteral("secret note body"))
+            failure = QStringLiteral("Secret note second reveal failed");
+        if (prompts != 2)
+            failure = QStringLiteral("Secret note second reveal was not prompted");
+
+        body->setContent(QStringLiteral("edited secret note"));
+        scheduleSecretAccess();
+        save->click();
+        if (editor->isVisible()) {
+            if (failure.isEmpty())
+                failure = QStringLiteral("Secret note save did not complete");
+            editor->reject();
+        }
+    });
+    view.editSelectedEntry();
+    QVERIFY2(failure.isEmpty(), qPrintable(failure));
+    QCOMPARE(prompts, 3);
+    QVERIFY(!sharedSession->hasKek());
+
+    QVERIFY(select(QStringLiteral("Secret Login")));
+    failure.clear();
+    QTimer::singleShot(0, [&] {
+        auto *editor = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+        if (!editor) {
+            failure = QStringLiteral("password editor not found");
+            return;
+        }
+        auto *password = editor->findChild<EncryptedContentWidget *>(
+            QStringLiteral("passwordSecretWidget"));
+        auto *notes = editor->findChild<EncryptedContentWidget *>(
+            QStringLiteral("passwordNotesWidget"));
+        auto *save =
+            editor->findChild<QPushButton *>(QStringLiteral("passwordSave"));
+        if (!password || !notes || !save) {
+            failure = QStringLiteral("password editor widgets missing");
+            editor->reject();
+            return;
+        }
+        auto *passwordEye =
+            password->findChild<QToolButton *>(QStringLiteral("secretEye"));
+        auto *notesEye =
+            notes->findChild<QToolButton *>(QStringLiteral("secretEye"));
+        if (!passwordEye || !notesEye) {
+            failure = QStringLiteral("Secret password eyes missing");
+            editor->reject();
+            return;
+        }
+        if (password->isLoaded() || notes->isLoaded())
+            failure = QStringLiteral("Secret password loaded before reveal");
+        if (save->isEnabled())
+            failure = QStringLiteral("Secret password save was enabled");
+
+        scheduleSecretAccess();
+        passwordEye->click();
+        if (password->content() != QStringLiteral("mock-secret"))
+            failure = QStringLiteral("Secret password reveal failed");
+        if (notes->isLoaded())
+            failure = QStringLiteral("Secret password notes loaded with password");
+
+        scheduleSecretAccess();
+        notesEye->click();
+        if (notes->content() != QStringLiteral("test notes"))
+            failure = QStringLiteral("Secret password notes reveal failed");
+        if (!save->isEnabled())
+            failure = QStringLiteral("Secret password save was not enabled");
+
+        notes->setContent(QStringLiteral("edited secret notes"));
+        scheduleSecretAccess();
+        save->click();
+        if (editor->isVisible()) {
+            if (failure.isEmpty())
+                failure = QStringLiteral("Secret password save did not complete");
+            editor->reject();
+        }
+    });
+    view.editSelectedEntry();
+    QVERIFY2(failure.isEmpty(), qPrintable(failure));
+    QCOMPARE(prompts, 6);
+    QVERIFY(!sharedSession->hasKek());
+
+    failure.clear();
+    QTimer::singleShot(0, [&] {
+        auto *editor = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+        if (!editor) {
+            failure = QStringLiteral("new note editor not found");
+            return;
+        }
+        auto *title = editor->findChild<QLineEdit *>(QStringLiteral("noteTitle"));
+        auto *body = editor->findChild<EncryptedContentWidget *>(
+            QStringLiteral("noteBodyWidget"));
+        auto *classification = editor->findChild<QComboBox *>(
+            QStringLiteral("noteClassification"));
+        auto *save = editor->findChild<QPushButton *>(QStringLiteral("noteSave"));
+        if (!title || !body || !classification || !save) {
+            failure = QStringLiteral("new note editor widgets missing");
+            editor->reject();
+            return;
+        }
+        title->setText(QStringLiteral("New Secret"));
+        body->setContent(QStringLiteral("new secret body"));
+        classification->setCurrentIndex(
+            classification->findData(QStringLiteral("S")));
+        scheduleSecretAccess();
+        save->click();
+        if (editor->isVisible()) {
+            if (failure.isEmpty())
+                failure = QStringLiteral("new Secret note save did not complete");
+            editor->reject();
+        }
+    });
+    view.addNote();
+    QVERIFY2(failure.isEmpty(), qPrintable(failure));
+    QCOMPARE(prompts, 7);
+    QVERIFY(!sharedSession->hasKek());
+
+    failure.clear();
+    QTimer::singleShot(0, [&] {
+        auto *editor = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+        if (!editor) {
+            failure = QStringLiteral("new password editor not found");
+            return;
+        }
+        auto *title =
+            editor->findChild<QLineEdit *>(QStringLiteral("passwordTitle"));
+        auto *username =
+            editor->findChild<QLineEdit *>(QStringLiteral("passwordUsername"));
+        auto *password = editor->findChild<EncryptedContentWidget *>(
+            QStringLiteral("passwordSecretWidget"));
+        auto *save =
+            editor->findChild<QPushButton *>(QStringLiteral("passwordSave"));
+        if (!title || !username || !password || !save) {
+            failure = QStringLiteral("new password editor widgets missing");
+            editor->reject();
+            return;
+        }
+        title->setText(QStringLiteral("New Secret Login"));
+        username->setText(QStringLiteral("new-user"));
+        password->setContent(QStringLiteral("new-secret"));
+        scheduleSecretAccess();
+        save->click();
+        if (editor->isVisible()) {
+            if (failure.isEmpty())
+                failure = QStringLiteral("new Secret password save did not complete");
+            editor->reject();
+        }
+    });
+    view.addEntry();
+    QVERIFY2(failure.isEmpty(), qPrintable(failure));
+    QCOMPARE(prompts, 8);
+    QVERIFY(!sharedSession->hasKek());
+
+    auto readUnlock =
+        VaultUnlocker::unlock(vault, QStringLiteral("master-password"), false);
+    QVERIFY2(readUnlock.ok, qPrintable(readUnlock.error));
+    auto reader = VaultSession::open(
+        databasePath.toStdString(), std::move(readUnlock.vaultKey),
+        std::move(readUnlock.smk), &databaseError, true);
+    QVERIFY2(reader != nullptr, databaseError.c_str());
+    ItemRecord record;
+    QVERIFY2(reader->items().get(noteId, &record, &databaseError),
+             databaseError.c_str());
+    QCOMPARE(QString::fromStdString(record.payload),
+             QStringLiteral("edited secret note"));
+    QVERIFY2(reader->items().get(passwordId, &record, &databaseError),
+             databaseError.c_str());
+    QVERIFY(record.payload.find("mock-secret") != std::string::npos);
+    QVERIFY(record.payload.find("edited secret notes") != std::string::npos);
+
+    std::vector<ItemSummary> notes;
+    QVERIFY2(reader->items().list("plain", &notes, &databaseError),
+             databaseError.c_str());
+    bool foundNewNote = false;
+    for (const ItemSummary &summary : notes) {
+        if (summary.title != "New Secret")
+            continue;
+        foundNewNote = true;
+        QVERIFY2(reader->items().get(summary.id, &record, &databaseError),
+                 databaseError.c_str());
+        QCOMPARE(QString::fromStdString(record.payload),
+                 QStringLiteral("new secret body"));
+        QCOMPARE(QString::fromStdString(record.classification),
+                 QStringLiteral("S"));
+    }
+    QVERIFY(foundNewNote);
+
+    std::vector<ItemSummary> passwords;
+    QVERIFY2(reader->items().list("password", &passwords, &databaseError),
+             databaseError.c_str());
+    bool foundNewPassword = false;
+    for (const ItemSummary &summary : passwords) {
+        if (summary.title != "New Secret Login")
+            continue;
+        foundNewPassword = true;
+        QVERIFY2(reader->items().get(summary.id, &record, &databaseError),
+                 databaseError.c_str());
+        QVERIFY(record.payload.find("new-secret") != std::string::npos);
+    }
+    QVERIFY(foundNewPassword);
 }
 
 void TestVaultView::filtersPasswords()
