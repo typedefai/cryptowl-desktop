@@ -106,8 +106,10 @@ The trace includes:
 
 High-level steps are marked with `>>` lines: SQLCipher open/create, key
 derivation, KEK/DEK unwrap, payload encryption/decryption, and item
-read/write. Each AEAD operation is then printed as one block, with inputs and
-outputs aligned under the operation and hex grouped into 4-byte words:
+read/write. Every `[cryptowl:crypto]` line is prefixed with a local
+`YYYY-MM-DD HH:MM:SS.mmm` timestamp (omitted below for brevity). Each AEAD
+operation is printed as one block, with inputs and outputs aligned under the
+operation and hex grouped into 4-byte words:
 
 ```text
 [cryptowl:crypto] >> unwrap KEK with SMK[0:32]
@@ -131,10 +133,10 @@ disables it; `NO_COLOR` and `TERM=dumb` are also honored. Color is off by
 default when redirected to a file, so `2>crypto.log` stays escape-free.
 
 Raw secret lines carry `secret=1` under the same `[cryptowl:crypto]` prefix.
-SQLCipher command lines are printed unprefixed so the command can be copied
-as-is. Large payload fields are truncated. The master password is never
-logged. Treat `crypto.log` as a secret, never use this mode with a real vault,
-and never ship or commit a trace-enabled build or its logs.
+SQLCipher command lines are printed unprefixed and without timestamps so the
+command can be copied as-is. Large payload fields are truncated. The master
+password is never logged. Treat `crypto.log` as a secret, never use this mode
+with a real vault, and never ship or commit a trace-enabled build or its logs.
 
 ## Layout
 

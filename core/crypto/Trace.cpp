@@ -3,9 +3,11 @@
 #include "crypto/Bytes.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -122,9 +124,34 @@ void writeLine(std::string_view line)
 #endif
 }
 
+std::string timestamp()
+{
+    const auto now = std::chrono::system_clock::now();
+    const std::time_t seconds = std::chrono::system_clock::to_time_t(now);
+    const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            now.time_since_epoch())
+                            .count()
+        % 1000;
+
+    std::tm local{};
+#if defined(_WIN32)
+    localtime_s(&local, &seconds);
+#else
+    localtime_r(&seconds, &local);
+#endif
+
+    char buffer[32];
+    std::snprintf(buffer, sizeof(buffer), "%04d-%02d-%02d %02d:%02d:%02d.%03d",
+                  local.tm_year + 1900, local.tm_mon + 1, local.tm_mday,
+                  local.tm_hour, local.tm_min, local.tm_sec,
+                  static_cast<int>(millis));
+    return buffer;
+}
+
 std::string prefix()
 {
-    return styled("[cryptowl:crypto]", kDim) + " ";
+    return styled(timestamp(), kDim) + " "
+        + styled("[cryptowl:crypto]", kDim) + " ";
 }
 
 // ---------------------------------------------------------------------------
