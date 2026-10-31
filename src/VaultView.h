@@ -20,6 +20,7 @@ class ProtectedValue;
 }
 
 namespace cryptowl::vault {
+struct ItemRecord;
 class ItemRepository;
 class VaultSession;
 }
@@ -41,6 +42,7 @@ public:
     void showIcons();
     void addEntry();
     void addNote();
+    void viewSelectedEntry();
     void editSelectedEntry();
     void deleteSelectedEntry();
     void copySelectedUsername();
@@ -69,8 +71,11 @@ private:
     void updateInfo();
     void updateGroupCounts();
     void showContextMenu(QAbstractItemView *view, const QPoint &pos);
+    void viewSelectedPassword();
     void editSelectedPassword();
     void editSelectedNote();
+    bool readPasswordItem(const QString &id, const QString &classification,
+                          cryptowl::vault::ItemRecord *record, QString *error);
     bool openSecretSession(
         std::unique_ptr<cryptowl::vault::VaultSession> *session,
         QString *error);

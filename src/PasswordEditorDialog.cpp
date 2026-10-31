@@ -63,6 +63,8 @@ PasswordEditorDialog::PasswordEditorDialog(const Data &data, SecretLoader loader
         m_passwordWidget->setContent(data.password, true);
         m_notesWidget->setContent(data.notes);
     }
+    if (m_confirmEdit)
+        m_confirmEdit->setText(data.password);
     updateSaveButton();
 
     m_titleEdit->selectAll();
@@ -141,19 +143,16 @@ void PasswordEditorDialog::buildUi(bool editing)
     m_classificationCombo->addItem(tr("Secret (S)"), QStringLiteral("S"));
     m_classificationCombo->addItem(tr("Top Secret (T)"), QStringLiteral("T"));
 
-    if (!editing) {
-        m_confirmEdit = new QLineEdit(this);
-        m_confirmEdit->setObjectName(QStringLiteral("passwordConfirm"));
-        m_confirmEdit->setEchoMode(QLineEdit::Password);
-        m_confirmEdit->setPlaceholderText(tr("Re-enter password"));
-    }
+    m_confirmEdit = new QLineEdit(this);
+    m_confirmEdit->setObjectName(QStringLiteral("passwordConfirm"));
+    m_confirmEdit->setEchoMode(QLineEdit::Password);
+    m_confirmEdit->setPlaceholderText(tr("Re-enter password"));
 
     form->addRow(tr("Title:"), m_titleEdit);
     form->addRow(tr("User name:"), m_usernameEdit);
     form->addRow(tr("URL:"), m_urlEdit);
     form->addRow(tr("Password:"), m_passwordWidget);
-    if (m_confirmEdit)
-        form->addRow(tr("Confirm password:"), m_confirmEdit);
+    form->addRow(tr("Confirm password:"), m_confirmEdit);
     form->addRow(tr("Notes:"), m_notesWidget);
     form->addRow(tr("Confidentiality:"), m_classificationCombo);
     layout->addLayout(form);

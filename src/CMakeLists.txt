@@ -11,6 +11,8 @@ qt_add_library(cryptowl_ui STATIC
     NoteEditorDialog.cpp
     PasswordEditorDialog.h
     PasswordEditorDialog.cpp
+    PasswordViewDialog.h
+    PasswordViewDialog.cpp
     RecentVaultsStore.h
     RecentVaultsStore.cpp
     SecretAccessDialog.h

@@ -17,6 +17,7 @@
 #include <QFile>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QPointer>
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QTemporaryDir>
@@ -350,7 +351,7 @@ void TestVaultView::editorsLoadSecretsLazily()
             passwordFailure = QStringLiteral("password notes were not revealed");
         dialog->reject();
     });
-    view.editSelectedEntry();
+    view.viewSelectedEntry();
     QVERIFY2(passwordFailure.isEmpty(), qPrintable(passwordFailure));
     QVERIFY(passwordDialogSeen);
 
@@ -568,20 +569,18 @@ void TestVaultView::topSecretRevealAndEditor()
     select(QStringLiteral("Top Login"));
     failure.clear();
     QTimer::singleShot(0, [&] {
-        auto *editor = qobject_cast<QDialog *>(QApplication::activeModalWidget());
-        if (!editor) {
-            failure = QStringLiteral("password editor not found");
+        auto *viewer = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+        if (!viewer) {
+            failure = QStringLiteral("password view not found");
             return;
         }
-        auto *password = editor->findChild<EncryptedContentWidget *>(
+        auto *password = viewer->findChild<EncryptedContentWidget *>(
             QStringLiteral("passwordSecretWidget"));
-        auto *notes = editor->findChild<EncryptedContentWidget *>(
+        auto *notes = viewer->findChild<EncryptedContentWidget *>(
             QStringLiteral("passwordNotesWidget"));
-        auto *save =
-            editor->findChild<QPushButton *>(QStringLiteral("passwordSave"));
-        if (!password || !notes || !save) {
-            failure = QStringLiteral("password editor widgets missing");
-            editor->reject();
+        if (!password || !notes) {
+            failure = QStringLiteral("password view widgets missing");
+            viewer->reject();
             return;
         }
         auto *passwordEye =
@@ -589,16 +588,14 @@ void TestVaultView::topSecretRevealAndEditor()
         auto *notesEye =
             notes->findChild<QToolButton *>(QStringLiteral("secretEye"));
         if (!passwordEye || !notesEye) {
-            failure = QStringLiteral("Top Secret password eyes missing");
-            editor->reject();
+            failure = QStringLiteral("Top Secret password view eyes missing");
+            viewer->reject();
             return;
         }
         if (password->isLoaded() || notes->isLoaded())
             failure = QStringLiteral("Top Secret password loaded before reveal");
         if (!password->content().isEmpty() || !notes->content().isEmpty())
             failure = QStringLiteral("Top Secret password masks missing");
-        if (save->isEnabled())
-            failure = QStringLiteral("Top Secret password save was enabled");
 
         scheduleUnlock();
         passwordEye->click();
@@ -611,17 +608,67 @@ void TestVaultView::topSecretRevealAndEditor()
         notesEye->click();
         if (notes->content() != QStringLiteral("top notes"))
             failure = QStringLiteral("Top Secret password notes reveal failed");
+        viewer->reject();
+    });
+    view.viewSelectedEntry();
+    QVERIFY2(failure.isEmpty(), qPrintable(failure));
 
+    failure.clear();
+    bool editorSaved = false;
+    QTimer editTimer;
+    editTimer.setInterval(0);
+    connect(&editTimer, &QTimer::timeout, &editTimer, [&] {
+        auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+        if (!dialog)
+            return;
+        if (auto *password =
+                dialog->findChild<QLineEdit *>(QStringLiteral("topSecretPassword"))) {
+            auto *button =
+                dialog->findChild<QPushButton *>(QStringLiteral("topSecretUnlock"));
+            if (!button) {
+                failure = QStringLiteral("Top Secret unlock widgets missing");
+                dialog->reject();
+                return;
+            }
+            password->setText(QStringLiteral("secondary-password"));
+            button->click();
+            return;
+        }
+
+        auto *save = dialog->findChild<QPushButton *>(QStringLiteral("passwordSave"));
+        auto *password = dialog->findChild<EncryptedContentWidget *>(
+            QStringLiteral("passwordSecretWidget"));
+        auto *notes = dialog->findChild<EncryptedContentWidget *>(
+            QStringLiteral("passwordNotesWidget"));
+        auto *confirm =
+            dialog->findChild<QLineEdit *>(QStringLiteral("passwordConfirm"));
+        if (!save || editorSaved)
+            return;
+        if (!password || !notes || !confirm) {
+            failure = QStringLiteral("password editor widgets missing");
+            dialog->reject();
+            return;
+        }
+        if (!password->isLoaded() || !notes->isLoaded())
+            failure = QStringLiteral("password editor did not preload secrets");
+        if (confirm->text() != QStringLiteral("top-secret"))
+            failure = QStringLiteral("password confirmation was not prefilled");
+        if (!save->isEnabled())
+            failure = QStringLiteral("password editor save was disabled");
+
+        editorSaved = true;
         notes->setContent(QStringLiteral("edited top notes"));
         scheduleUnlock();
         save->click();
-        if (editor->isVisible()) {
+        if (dialog->isVisible()) {
             if (failure.isEmpty())
                 failure = QStringLiteral("Top Secret password save did not complete");
-            editor->reject();
+            dialog->reject();
         }
     });
+    editTimer.start();
     view.editSelectedEntry();
+    editTimer.stop();
     QVERIFY2(failure.isEmpty(), qPrintable(failure));
 
     QVERIFY2(sharedSession->items().get(passwordId, topSecretKek.span(), &record,
@@ -791,20 +838,18 @@ void TestVaultView::secretAccessRequiresPasswordEachTime()
     QVERIFY(select(QStringLiteral("Secret Login")));
     failure.clear();
     QTimer::singleShot(0, [&] {
-        auto *editor = qobject_cast<QDialog *>(QApplication::activeModalWidget());
-        if (!editor) {
-            failure = QStringLiteral("password editor not found");
+        auto *viewer = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+        if (!viewer) {
+            failure = QStringLiteral("password view not found");
             return;
         }
-        auto *password = editor->findChild<EncryptedContentWidget *>(
+        auto *password = viewer->findChild<EncryptedContentWidget *>(
             QStringLiteral("passwordSecretWidget"));
-        auto *notes = editor->findChild<EncryptedContentWidget *>(
+        auto *notes = viewer->findChild<EncryptedContentWidget *>(
             QStringLiteral("passwordNotesWidget"));
-        auto *save =
-            editor->findChild<QPushButton *>(QStringLiteral("passwordSave"));
-        if (!password || !notes || !save) {
-            failure = QStringLiteral("password editor widgets missing");
-            editor->reject();
+        if (!password || !notes) {
+            failure = QStringLiteral("password view widgets missing");
+            viewer->reject();
             return;
         }
         auto *passwordEye =
@@ -812,14 +857,14 @@ void TestVaultView::secretAccessRequiresPasswordEachTime()
         auto *notesEye =
             notes->findChild<QToolButton *>(QStringLiteral("secretEye"));
         if (!passwordEye || !notesEye) {
-            failure = QStringLiteral("Secret password eyes missing");
-            editor->reject();
+            failure = QStringLiteral("Secret password view eyes missing");
+            viewer->reject();
             return;
         }
         if (password->isLoaded() || notes->isLoaded())
             failure = QStringLiteral("Secret password loaded before reveal");
-        if (save->isEnabled())
-            failure = QStringLiteral("Secret password save was enabled");
+        if (!password->content().isEmpty() || !notes->content().isEmpty())
+            failure = QStringLiteral("Secret password masks missing");
 
         scheduleSecretAccess();
         passwordEye->click();
@@ -832,21 +877,77 @@ void TestVaultView::secretAccessRequiresPasswordEachTime()
         notesEye->click();
         if (notes->content() != QStringLiteral("test notes"))
             failure = QStringLiteral("Secret password notes reveal failed");
-        if (!save->isEnabled())
-            failure = QStringLiteral("Secret password save was not enabled");
+        viewer->reject();
+    });
+    view.viewSelectedEntry();
+    QVERIFY2(failure.isEmpty(), qPrintable(failure));
+    QCOMPARE(prompts, 5);
+    QVERIFY(!sharedSession->hasKek());
 
+    failure.clear();
+    bool editorSaved = false;
+    QPointer<QDialog> lastPrompt;
+    QTimer editTimer;
+    editTimer.setInterval(0);
+    connect(&editTimer, &QTimer::timeout, &editTimer, [&] {
+        auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+        if (!dialog)
+            return;
+        auto *prompt =
+            dialog->findChild<QLineEdit *>(QStringLiteral("secretAccessPassword"));
+        if (prompt) {
+            if (dialog == lastPrompt)
+                return;
+            lastPrompt = dialog;
+            auto *button =
+                dialog->findChild<QPushButton *>(QStringLiteral("secretAccessUnlock"));
+            if (!button) {
+                failure = QStringLiteral("Secret access widgets missing");
+                dialog->reject();
+                return;
+            }
+            ++prompts;
+            prompt->setText(QStringLiteral("master-password"));
+            button->click();
+            return;
+        }
+
+        auto *save = dialog->findChild<QPushButton *>(QStringLiteral("passwordSave"));
+        if (!save || editorSaved)
+            return;
+        auto *password = dialog->findChild<EncryptedContentWidget *>(
+            QStringLiteral("passwordSecretWidget"));
+        auto *notes = dialog->findChild<EncryptedContentWidget *>(
+            QStringLiteral("passwordNotesWidget"));
+        auto *confirm =
+            dialog->findChild<QLineEdit *>(QStringLiteral("passwordConfirm"));
+        if (!password || !notes || !confirm) {
+            failure = QStringLiteral("password editor widgets missing");
+            dialog->reject();
+            return;
+        }
+        if (!password->isLoaded() || !notes->isLoaded())
+            failure = QStringLiteral("password editor did not preload secrets");
+        if (confirm->text() != QStringLiteral("mock-secret"))
+            failure = QStringLiteral("password confirmation was not prefilled");
+        if (!save->isEnabled())
+            failure = QStringLiteral("password editor save was disabled");
+
+        editorSaved = true;
         notes->setContent(QStringLiteral("edited secret notes"));
         scheduleSecretAccess();
         save->click();
-        if (editor->isVisible()) {
+        if (dialog->isVisible()) {
             if (failure.isEmpty())
                 failure = QStringLiteral("Secret password save did not complete");
-            editor->reject();
+            dialog->reject();
         }
     });
+    editTimer.start();
     view.editSelectedEntry();
+    editTimer.stop();
     QVERIFY2(failure.isEmpty(), qPrintable(failure));
-    QCOMPARE(prompts, 6);
+    QCOMPARE(prompts, 7);
     QVERIFY(!sharedSession->hasKek());
 
     failure.clear();
@@ -881,7 +982,7 @@ void TestVaultView::secretAccessRequiresPasswordEachTime()
     });
     view.addNote();
     QVERIFY2(failure.isEmpty(), qPrintable(failure));
-    QCOMPARE(prompts, 7);
+    QCOMPARE(prompts, 8);
     QVERIFY(!sharedSession->hasKek());
 
     failure.clear();
@@ -920,7 +1021,7 @@ void TestVaultView::secretAccessRequiresPasswordEachTime()
     });
     view.addEntry();
     QVERIFY2(failure.isEmpty(), qPrintable(failure));
-    QCOMPARE(prompts, 8);
+    QCOMPARE(prompts, 9);
     QVERIFY(!sharedSession->hasKek());
 
     auto readUnlock =

@@ -132,14 +132,16 @@ logged.
   reveal/save re-enters the master password when Secret access is not
   remembered for the session; T always re-enters the secondary password.
   C/draft content is shown directly; markdown preview pending
-- ◐ Password editor (S/T): username/url/secret/notes JSON payload, show/hide,
-  create/edit/soft-delete; password and notes each use the masked widget with
-  an eye toggle and Copy. The bottom pane is metadata-only; Save stays disabled
-  until both encrypted fields are shown, and new passwords require a matching
-  confirmation entry. S reveal/save re-enters the master password when Secret
-  access is not remembered for the session; T prompts for the secondary
-  password on every reveal and save. Password is never copied automatically;
-  generator pending
+- ◐ Password viewer/editor (S/T): username/url/secret/notes JSON payload,
+  create/edit/soft-delete. Double-click or **View…** opens a read-only dialog
+  with eye/Copy controls for the password and notes; **Edit…** opens the editor
+  with both fields preloaded after one S/T authorization, so editing metadata
+  does not require revealing the secrets field by field. New passwords and
+  changed passwords require a matching confirmation entry (prefilled when
+  editing). The bottom pane is metadata-only. S access re-enters the master
+  password when Secret access is not remembered for the session; T prompts for
+  the secondary password on every access and save. Password is never copied
+  automatically; generator pending
 - ✅ Top Secret setup action: re-enter the master password, set a secondary
   password, add `secondarySalt`, re-sign `vault.meta`, and wrap a random
   TopSecretKEK; no recovery and no biometric factor on desktop
