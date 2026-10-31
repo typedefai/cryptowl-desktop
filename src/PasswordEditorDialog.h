@@ -53,6 +53,7 @@ private:
     QLineEdit *m_titleEdit = nullptr;
     QLineEdit *m_usernameEdit = nullptr;
     QLineEdit *m_urlEdit = nullptr;
+    QLineEdit *m_confirmEdit = nullptr;
     EncryptedContentWidget *m_passwordWidget = nullptr;
     EncryptedContentWidget *m_notesWidget = nullptr;
     QComboBox *m_classificationCombo = nullptr;

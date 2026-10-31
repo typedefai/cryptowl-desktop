@@ -18,6 +18,7 @@ private slots:
     void roundTripsData();
     void togglesPasswordVisibility();
     void lazyLoadsSecretOnShow();
+    void requiresMatchingConfirmation();
     void requiresTitle();
 };
 
@@ -43,6 +44,7 @@ void TestPasswordEditorDialog::roundTripsData()
     QVERIFY(url);
     QVERIFY(password);
     QVERIFY(notes);
+    QVERIFY(!dialog.findChild<QLineEdit *>(QStringLiteral("passwordConfirm")));
 
     QCOMPARE(title->text(), initial.title);
     QCOMPARE(username->text(), initial.username);
@@ -155,6 +157,33 @@ void TestPasswordEditorDialog::lazyLoadsSecretOnShow()
     QCOMPARE(loads, 3);
     QVERIFY(password->isLoaded());
     QCOMPARE(password->content(), QStringLiteral("loaded-secret"));
+}
+
+void TestPasswordEditorDialog::requiresMatchingConfirmation()
+{
+    PasswordEditorDialog dialog;
+    auto *title = dialog.findChild<QLineEdit *>(QStringLiteral("passwordTitle"));
+    auto *password = dialog.findChild<EncryptedContentWidget *>(
+        QStringLiteral("passwordSecretWidget"));
+    auto *confirm =
+        dialog.findChild<QLineEdit *>(QStringLiteral("passwordConfirm"));
+    auto *error = dialog.findChild<QLabel *>(QStringLiteral("passwordError"));
+    QVERIFY(title);
+    QVERIFY(password);
+    QVERIFY(confirm);
+    QVERIFY(error);
+
+    title->setText(QStringLiteral("Mail"));
+    password->setContent(QStringLiteral("one"), true);
+    confirm->setText(QStringLiteral("two"));
+    QVERIFY(QMetaObject::invokeMethod(&dialog, "save", Qt::DirectConnection));
+    QVERIFY(dialog.result() != int(QDialog::Accepted));
+    QVERIFY(error->text().contains(QStringLiteral("do not match")));
+
+    confirm->setText(QStringLiteral("one"));
+    QVERIFY(QMetaObject::invokeMethod(&dialog, "save", Qt::DirectConnection));
+    QCOMPARE(dialog.result(), int(QDialog::Accepted));
+    QCOMPARE(dialog.data().password, QStringLiteral("one"));
 }
 
 void TestPasswordEditorDialog::requiresTitle()

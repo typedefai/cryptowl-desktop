@@ -897,9 +897,11 @@ void TestVaultView::secretAccessRequiresPasswordEachTime()
             editor->findChild<QLineEdit *>(QStringLiteral("passwordUsername"));
         auto *password = editor->findChild<EncryptedContentWidget *>(
             QStringLiteral("passwordSecretWidget"));
+        auto *confirm =
+            editor->findChild<QLineEdit *>(QStringLiteral("passwordConfirm"));
         auto *save =
             editor->findChild<QPushButton *>(QStringLiteral("passwordSave"));
-        if (!title || !username || !password || !save) {
+        if (!title || !username || !password || !confirm || !save) {
             failure = QStringLiteral("new password editor widgets missing");
             editor->reject();
             return;
@@ -907,6 +909,7 @@ void TestVaultView::secretAccessRequiresPasswordEachTime()
         title->setText(QStringLiteral("New Secret Login"));
         username->setText(QStringLiteral("new-user"));
         password->setContent(QStringLiteral("new-secret"));
+        confirm->setText(QStringLiteral("new-secret"));
         scheduleSecretAccess();
         save->click();
         if (editor->isVisible()) {

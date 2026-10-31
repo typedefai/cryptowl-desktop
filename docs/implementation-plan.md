@@ -134,10 +134,11 @@ logged.
 - ◐ Password editor (S/T): username/url/secret/notes JSON payload, show/hide,
   create/edit/soft-delete; password and notes each use the masked widget with
   an eye toggle and Copy. The bottom pane is metadata-only; Save stays disabled
-  until both encrypted fields are shown. S reveal/save re-enters the master
-  password unless Secret access is remembered for the session; T prompts for
-  the secondary password on every reveal and save. Password is never copied
-  automatically; generator pending
+  until both encrypted fields are shown, and new passwords require a matching
+  confirmation entry. S reveal/save re-enters the master password unless
+  Secret access is remembered for the session; T prompts for the secondary
+  password on every reveal and save. Password is never copied automatically;
+  generator pending
 - ✅ Top Secret setup action: re-enter the master password, set a secondary
   password, add `secondarySalt`, re-sign `vault.meta`, and wrap a random
   TopSecretKEK; no recovery and no biometric factor on desktop
