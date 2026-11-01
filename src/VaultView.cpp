@@ -1043,7 +1043,8 @@ void VaultView::viewSelectedPassword()
     PasswordViewDialog dialog(data, std::move(loader), this);
     wipe(data.password);
     wipe(data.notes);
-    dialog.exec();
+    if (dialog.exec() == QDialog::Accepted)
+        editSelectedPassword();
 }
 
 void VaultView::editSelectedPassword()

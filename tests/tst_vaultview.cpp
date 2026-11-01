@@ -317,8 +317,10 @@ void TestVaultView::editorsLoadSecretsLazily()
             QStringLiteral("passwordSecretWidget"));
         auto *notes = dialog->findChild<EncryptedContentWidget *>(
             QStringLiteral("passwordNotesWidget"));
-        if (!password || !notes) {
-            passwordFailure = QStringLiteral("password editor widgets missing");
+        auto *editButton =
+            dialog->findChild<QPushButton *>(QStringLiteral("passwordViewEdit"));
+        if (!password || !notes || !editButton) {
+            passwordFailure = QStringLiteral("password view widgets missing");
             dialog->reject();
             return;
         }

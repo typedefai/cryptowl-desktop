@@ -1,4 +1,5 @@
 #include "PasswordEditorDialog.h"
+#include "PasswordViewDialog.h"
 
 #include "EncryptedContentWidget.h"
 
@@ -7,6 +8,7 @@
 #include <QLineEdit>
 #include <QMetaObject>
 #include <QPushButton>
+#include <QTimer>
 #include <QToolButton>
 #include <QtTest>
 
@@ -21,6 +23,7 @@ private slots:
     void requiresMatchingConfirmation();
     void requiresConfirmationWhenEditing();
     void requiresTitle();
+    void viewDialogEditReturnsAccepted();
 };
 
 void TestPasswordEditorDialog::roundTripsData()
@@ -239,6 +242,21 @@ void TestPasswordEditorDialog::requiresTitle()
     title->setText(QStringLiteral("Mail"));
     QVERIFY(QMetaObject::invokeMethod(&dialog, "save", Qt::DirectConnection));
     QCOMPARE(dialog.result(), int(QDialog::Accepted));
+}
+
+void TestPasswordEditorDialog::viewDialogEditReturnsAccepted()
+{
+    PasswordViewDialog::Data data;
+    data.title = QStringLiteral("Mail");
+    data.username = QStringLiteral("user");
+    data.classification = QStringLiteral("S");
+
+    PasswordViewDialog dialog(data, {});
+    auto *edit =
+        dialog.findChild<QPushButton *>(QStringLiteral("passwordViewEdit"));
+    QVERIFY(edit);
+    QTimer::singleShot(0, edit, &QPushButton::click);
+    QCOMPARE(dialog.exec(), int(QDialog::Accepted));
 }
 
 QTEST_MAIN(TestPasswordEditorDialog)

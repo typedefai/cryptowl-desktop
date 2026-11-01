@@ -134,9 +134,10 @@ logged.
   C/draft content is shown directly; markdown preview pending
 - ◐ Password viewer/editor (S/T): username/url/secret/notes JSON payload,
   create/edit/soft-delete. Double-click or **View…** opens a read-only dialog
-  with eye/Copy controls for the password and notes; **Edit…** opens the editor
-  with both fields preloaded after one S/T authorization, so editing metadata
-  does not require revealing the secrets field by field. New passwords and
+  with eye/Copy controls for the password and notes and an **Edit…** button;
+  **Edit…** opens the editor with both fields preloaded after one S/T
+  authorization, so editing metadata does not require revealing the secrets
+  field by field. New passwords and
   changed passwords require a matching confirmation entry (prefilled when
   editing). The bottom pane is metadata-only. S access re-enters the master
   password when Secret access is not remembered for the session; T prompts for

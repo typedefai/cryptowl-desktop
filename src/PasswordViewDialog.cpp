@@ -97,6 +97,12 @@ PasswordViewDialog::PasswordViewDialog(const Data &data, SecretLoader loader,
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
     auto *closeButton = buttons->button(QDialogButtonBox::Close);
     closeButton->setObjectName(QStringLiteral("passwordViewClose"));
+    auto *editButton =
+        buttons->addButton(tr("Edit…"), QDialogButtonBox::ActionRole);
+    editButton->setObjectName(QStringLiteral("passwordViewEdit"));
+    editButton->setAutoDefault(false);
+    connect(editButton, &QPushButton::clicked, this,
+            [this] { done(QDialog::Accepted); });
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     layout->addWidget(buttons);
 
