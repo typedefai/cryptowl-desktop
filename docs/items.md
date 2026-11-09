@@ -168,6 +168,11 @@ kept from the v1 core.
 - Mount/unmount is explicit; locking the vault always unmounts. No plaintext
   media temp files are written. S/T media stays in the in-app viewers until
   per-item drive unlock is designed.
+- Unmount force-detaches the read-only volume (macOS `MNT_FORCE`, Linux
+  `MNT_DETACH`) before stopping the request loop, so Finder/Explorer holding
+  directory or file handles cannot deadlock the UI. If detaching fails, the
+  vault stays locked in the UI and an error is shown instead of destroying a
+  live session.
 
 ## Folders (Explorer-style)
 

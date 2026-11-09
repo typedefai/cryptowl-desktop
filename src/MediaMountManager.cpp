@@ -40,8 +40,14 @@ bool MediaMountManager::mount(
                          .arg(m_mountPoint);
         return false;
     }
-    if (isMounted())
-        unmount();
+    if (isMounted()) {
+        QString unmountError;
+        if (!unmount(&unmountError)) {
+            if (error)
+                *error = unmountError;
+            return false;
+        }
+    }
 
     if (!FuseMount::isAvailable()) {
         if (error)
@@ -105,10 +111,16 @@ bool MediaMountManager::mount(
     return true;
 }
 
-void MediaMountManager::unmount()
+bool MediaMountManager::unmount(QString *error)
 {
-    if (m_fuse)
-        m_fuse->unmount();
+    if (m_fuse) {
+        QString unmountError;
+        if (!m_fuse->unmount(&unmountError)) {
+            if (error)
+                *error = unmountError;
+            return false;
+        }
+    }
     m_fuse.reset();
     m_fs.reset();
     m_session.reset();
@@ -116,6 +128,7 @@ void MediaMountManager::unmount()
         QDir().rmdir(m_mountPoint);
     m_mountPoint.clear();
     m_vaultPath.clear();
+    return true;
 }
 
 bool MediaMountManager::isMounted() const

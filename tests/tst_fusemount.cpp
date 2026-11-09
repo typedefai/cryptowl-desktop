@@ -18,6 +18,11 @@
 #include <string>
 #include <vector>
 
+#ifndef Q_OS_WIN
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
 using cryptowl::crypto::Bytes;
 using cryptowl::crypto::ProtectedValue;
 using cryptowl::vault::ImportFile;
@@ -122,7 +127,17 @@ void TestFuseMount::mountsAndReadsMedia()
         mountedData = mountedFile.readAll();
     mountedFile.close();
 
-    mount.unmount();
+#ifndef Q_OS_WIN
+    const int directoryFd =
+        ::open(mountDir.filePath(QStringLiteral("Photos")).toUtf8().constData(),
+               O_RDONLY);
+#endif
+    QString unmountError;
+    QVERIFY2(mount.unmount(&unmountError), qPrintable(unmountError));
+#ifndef Q_OS_WIN
+    if (directoryFd >= 0)
+        ::close(directoryFd);
+#endif
     QVERIFY2(opened, qPrintable(openError));
     QVERIFY(!rootEntries.isEmpty());
     QVERIFY(!photoEntries.isEmpty());

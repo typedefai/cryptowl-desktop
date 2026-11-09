@@ -159,8 +159,9 @@ logged.
 - ✅ Photo/video import from the app, image thumbnails, image viewer and
   Qt Multimedia video viewer over a custom encrypted `QIODevice`.
 - ◐ Native media drive: read-only FUSE 3/macFUSE backend and mount/unmount
-  actions on Linux/macOS; Windows WinFsp adapter, automatic refresh, video
-  poster frames, S/T media and FUSE write support remain pending.
+  actions on Linux/macOS; force-detach unmount avoids open-handle deadlocks.
+  Windows WinFsp adapter, automatic refresh, video poster frames, S/T media
+  and FUSE write support remain pending.
 - ◐ Media history/replacement is not represented in `t_item_version`; v1 is
   import/create-only.
 

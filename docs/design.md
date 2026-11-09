@@ -183,6 +183,10 @@ Encryption is **consistent between the database and files at every tier**: a fil
   no plaintext media is written to disk.
 - Mounting is explicit, and locking the vault always unmounts and invalidates
   readers. S/T media remains in-app until per-item drive unlock exists.
+- Unmount force-detaches the read-only volume before stopping the request loop
+  (`MNT_FORCE` on macOS, `MNT_DETACH` on Linux), because open Finder/Explorer
+  handles can otherwise block libfuse forever. A failed detach aborts locking
+  rather than destroying the session under a live mount.
 - The mount is read-only; writes return `EROFS` (or the platform equivalent).
 
 ## Fingerprint / Biometric Unlock

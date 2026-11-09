@@ -19,9 +19,8 @@
 #include <fuse3/fuse.h>
 
 #include <fcntl.h>
-#ifdef __APPLE__
 #include <sys/mount.h>
-#else
+#ifndef __APPLE__
 #include <sys/statvfs.h>
 #endif
 #include <unistd.h>
@@ -190,6 +189,21 @@ struct fuse_operations operations()
     return ops;
 }
 
+bool forceUnmount(const QString &mountPoint, QString *error)
+{
+    const QByteArray path = mountPoint.toUtf8();
+#ifdef __APPLE__
+    const int rc = ::unmount(path.constData(), MNT_FORCE);
+#else
+    const int rc = ::umount2(path.constData(), MNT_DETACH);
+#endif
+    if (rc == 0)
+        return true;
+    if (error)
+        *error = QString::fromLocal8Bit(std::strerror(errno));
+    return false;
+}
+
 #else
 
 struct MountContext
@@ -295,22 +309,37 @@ bool FuseMount::mount(const QString &mountPoint,
 #endif
 }
 
-void FuseMount::unmount()
+bool FuseMount::unmount(QString *error)
 {
 #if defined(CRYPTOWL_HAS_FUSE)
     if (!m_impl)
-        return;
+        return true;
     if (m_impl->handle) {
+        // A normal libfuse unmount can block indefinitely when Finder or
+        // another process still holds a directory/file handle.  Force the
+        // kernel-side unmount while the request loop is still alive, then
+        // stop the loop.  The media drive is read-only, so forcing is safe.
+        QString unmountError;
+        if (!forceUnmount(m_impl->mountPoint, &unmountError)) {
+            if (error)
+                *error = QStringLiteral("Could not unmount the media drive: %1")
+                             .arg(unmountError);
+            return false;
+        }
+
         fuse_exit(m_impl->handle);
         if (m_impl->loop.joinable())
             m_impl->loop.join();
-        fuse_unmount(m_impl->handle);
         fuse_destroy(m_impl->handle);
         m_impl->handle = nullptr;
     }
     m_impl->context.reset();
     m_impl->mountPoint.clear();
     m_impl->mounted = false;
+    return true;
+#else
+    (void)error;
+    return true;
 #endif
 }
 

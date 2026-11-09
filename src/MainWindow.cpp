@@ -183,7 +183,9 @@ void MainWindow::createActions()
         style()->standardIcon(QStyle::SP_DriveHDIcon), tr("&Unmount media drive"),
         this);
     connect(m_unmountMediaAction, &QAction::triggered, this, [this] {
-        m_mediaMount.unmount();
+        QString error;
+        if (!m_mediaMount.unmount(&error))
+            QMessageBox::warning(this, tr("Could not unmount media drive"), error);
         updateWorkspaceActions();
     });
 
@@ -385,8 +387,14 @@ void MainWindow::unlockVault(const QString &rawPath)
 void MainWindow::lockVault(const QString &rawPath)
 {
     const QString path = canonicalVaultPath(rawPath);
-    if (m_mediaMount.hasVault(path))
-        m_mediaMount.unmount();
+    if (m_mediaMount.hasVault(path)) {
+        QString error;
+        if (!m_mediaMount.unmount(&error)) {
+            QMessageBox::warning(this, tr("Could not unmount media drive"),
+                                 tr("The vault was not locked:\n%1").arg(error));
+            return;
+        }
+    }
     m_welcome->setVaultUnlocked(path, false);
 
     if (auto *view = m_vaultViews.take(path)) {

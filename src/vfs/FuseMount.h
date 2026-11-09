@@ -21,7 +21,7 @@ public:
 
     bool mount(const QString &mountPoint, cryptowl::vault::VirtualMediaFs *fs,
                QString *error = nullptr);
-    void unmount();
+    bool unmount(QString *error = nullptr);
     bool isMounted() const;
     QString mountPoint() const;
 

@@ -25,7 +25,7 @@ public:
     bool mount(const QString &vaultPath,
                const std::shared_ptr<cryptowl::vault::VaultSession> &session,
                QString *error = nullptr);
-    void unmount();
+    bool unmount(QString *error = nullptr);
     bool isMounted() const;
     bool hasVault(const QString &vaultPath) const;
     QString mountPoint() const;
