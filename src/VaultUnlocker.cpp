@@ -32,6 +32,9 @@ namespace {
 using namespace cryptowl::crypto;
 
 constexpr qint64 kMaxMetaBytes = 1024 * 1024;
+constexpr qint64 kMaxConfigBytes = 1024 * 1024;
+constexpr std::uint64_t kDefaultEmbedMaxBytes = 512 * 1024;
+constexpr std::uint64_t kMaxEmbedMaxBytes = 64 * 1024 * 1024;
 constexpr int kMaxKdfMemoryKib = 256 * 1024;
 constexpr int kMaxKdfIterations = 16;
 constexpr int kMaxKdfParallelism = 16;
@@ -76,6 +79,31 @@ bool constantTimeEquals(std::span<const std::uint8_t> left,
     for (std::size_t i = 0; i < left.size(); ++i)
         difference |= static_cast<std::uint8_t>(left[i] ^ right[i]);
     return difference == 0;
+}
+
+std::uint64_t readEmbedMaxBytes(const QString &vaultPath)
+{
+    QFile configFile(QDir(vaultPath).filePath(QStringLiteral("config.json")));
+    if (!configFile.open(QIODevice::ReadOnly)
+        || configFile.size() > kMaxConfigBytes) {
+        return kDefaultEmbedMaxBytes;
+    }
+
+    QJsonParseError parseError;
+    const QJsonDocument document =
+        QJsonDocument::fromJson(configFile.readAll(), &parseError);
+    if (parseError.error != QJsonParseError::NoError || !document.isObject())
+        return kDefaultEmbedMaxBytes;
+
+    const QJsonObject files =
+        document.object().value(QStringLiteral("files")).toObject();
+    const QJsonValue value = files.value(QStringLiteral("embed_max_bytes"));
+    if (!value.isDouble())
+        return kDefaultEmbedMaxBytes;
+    const double number = value.toDouble();
+    if (number <= 0 || number > static_cast<double>(kMaxEmbedMaxBytes))
+        return kDefaultEmbedMaxBytes;
+    return static_cast<std::uint64_t>(number);
 }
 
 } // namespace
@@ -254,6 +282,7 @@ VaultUnlocker::Result VaultUnlocker::unlock(const QString &vaultPath,
 
         Result result;
         result.ok = true;
+        result.embedMaxBytes = readEmbedMaxBytes(vaultPath);
         result.vaultKey = ProtectedValue(std::move(vaultKeyBytes));
         result.smk = std::move(smk);
 

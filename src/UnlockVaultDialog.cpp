@@ -110,6 +110,11 @@ bool UnlockVaultDialog::rememberSecretAccess() const
     return m_rememberSecret && m_rememberSecret->isChecked();
 }
 
+std::uint64_t UnlockVaultDialog::embedMaxBytes() const
+{
+    return m_embedMaxBytes;
+}
+
 void UnlockVaultDialog::reject()
 {
     m_passwordEdit->clear();
@@ -149,6 +154,7 @@ void UnlockVaultDialog::tryUnlock()
 
     m_vaultKey = std::move(result.vaultKey);
     m_smk = std::move(result.smk);
+    m_embedMaxBytes = result.embedMaxBytes;
     m_passwordEdit->clear();
 
     if (!result.warning.isEmpty()) {

@@ -3,11 +3,14 @@
 #include "NoteEditorDialog.h"
 #include "PasswordEditorDialog.h"
 #include "PasswordViewDialog.h"
+#include "PhotoViewDialog.h"
 #include "SecretAccessDialog.h"
+#include "VideoViewDialog.h"
 #include "TopSecretDialog.h"
 #include "TopSecretService.h"
 #include "VaultUnlocker.h"
 #include "crypto/ProtectedValue.h"
+#include "vault/FileRepository.h"
 #include "vault/ItemRepository.h"
 #include "vault/VaultSession.h"
 
@@ -17,17 +20,25 @@
 #include <QClipboard>
 #include <QDateTime>
 #include <QDir>
+#include <QBuffer>
 #include <QEventLoop>
+#include <QFile>
+#include <QFileDialog>
+#include <QFileInfo>
 #include <QFont>
 #include <QGuiApplication>
 #include <QHeaderView>
+#include <QImage>
+#include <QImageReader>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
+#include <QLocale>
 #include <QListView>
 #include <QListWidget>
 #include <QMenu>
 #include <QMessageBox>
+#include <QMimeDatabase>
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QStringList>
@@ -37,12 +48,17 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace {
 
+using cryptowl::crypto::Bytes;
+using cryptowl::vault::FileRecord;
+using cryptowl::vault::FileStorage;
+using cryptowl::vault::ImportFile;
 using cryptowl::vault::ItemRecord;
 using cryptowl::vault::ItemRepository;
 using cryptowl::vault::ItemSummary;
@@ -52,6 +68,8 @@ using cryptowl::vault::VaultSession;
 
 constexpr const char *kPasswordType = "password";
 constexpr const char *kNoteType = "plain";
+constexpr const char *kPhotoType = "photo";
+constexpr const char *kVideoType = "video";
 
 QString escapedOrDash(const QString &text)
 {
@@ -191,6 +209,12 @@ QWidget *VaultView::createStructurePane()
 
     auto *notes = new QTreeWidgetItem(allItems, {tr("Notes")});
     notes->setData(0, Qt::UserRole, QString::fromLatin1(kNoteType));
+
+    auto *photos = new QTreeWidgetItem(allItems, {tr("Photos")});
+    photos->setData(0, Qt::UserRole, QString::fromLatin1(kPhotoType));
+
+    auto *videos = new QTreeWidgetItem(allItems, {tr("Videos")});
+    videos->setData(0, Qt::UserRole, QString::fromLatin1(kVideoType));
     allItems->setExpanded(true);
 
     connect(m_structure, &QTreeWidget::currentItemChanged, this,
@@ -280,6 +304,7 @@ void VaultView::reload(const QString &selectId)
         row.type = QString::fromStdString(item.type);
         row.title = QString::fromStdString(item.title);
         row.classification = QString::fromStdString(item.classification);
+        row.meta = QString::fromStdString(item.meta);
         row.updatedAt = item.updatedAt;
 
         const QJsonObject meta = parseJsonObject(item.meta);
@@ -354,19 +379,27 @@ void VaultView::refreshLists(const QString &selectId)
 void VaultView::updateGroupCounts()
 {
     auto *allItems = m_structure ? m_structure->topLevelItem(0) : nullptr;
-    if (!allItems || allItems->childCount() < 2)
+    if (!allItems || allItems->childCount() < 4)
         return;
 
     int passwords = 0;
     int notes = 0;
+    int photos = 0;
+    int videos = 0;
     for (const ItemRow &row : m_rows) {
         if (row.type == QLatin1String(kPasswordType))
             ++passwords;
         else if (row.type == QLatin1String(kNoteType))
             ++notes;
+        else if (row.type == QLatin1String(kPhotoType))
+            ++photos;
+        else if (row.type == QLatin1String(kVideoType))
+            ++videos;
     }
     allItems->child(0)->setText(0, tr("Passwords (%1)").arg(passwords));
     allItems->child(1)->setText(0, tr("Notes (%1)").arg(notes));
+    allItems->child(2)->setText(0, tr("Photos (%1)").arg(photos));
+    allItems->child(3)->setText(0, tr("Videos (%1)").arg(videos));
 }
 
 QString VaultView::typeLabel(const ItemRow &row) const
@@ -375,6 +408,10 @@ QString VaultView::typeLabel(const ItemRow &row) const
         return tr("Password");
     if (row.type == QLatin1String(kNoteType))
         return tr("Note");
+    if (row.type == QLatin1String(kPhotoType))
+        return tr("Photo");
+    if (row.type == QLatin1String(kVideoType))
+        return tr("Video");
     return row.type;
 }
 
@@ -393,6 +430,22 @@ QString VaultView::summaryText(const ItemRow &row) const
         if (row.classification == QLatin1String("T"))
             return tr("Top Secret");
         return tr("Confidential");
+    }
+    if (row.type == QLatin1String(kPhotoType)
+        || row.type == QLatin1String(kVideoType)) {
+        const QJsonObject meta = parseJsonObject(row.meta.toStdString());
+        const int width = meta.value(QStringLiteral("width")).toInt();
+        const int height = meta.value(QStringLiteral("height")).toInt();
+        if (width > 0 && height > 0)
+            return tr("%1 × %2").arg(width).arg(height);
+        const qint64 duration =
+            meta.value(QStringLiteral("duration_ms")).toInteger();
+        if (duration > 0) {
+            const qint64 seconds = duration / 1000;
+            return tr("%1:%2").arg(seconds / 60, 2, 10, QLatin1Char('0'))
+                .arg(seconds % 60, 2, 10, QLatin1Char('0'));
+        }
+        return typeLabel(row);
     }
     return row.classification;
 }
@@ -425,13 +478,65 @@ void VaultView::updateInfo()
     if (!row) {
         if (m_rows.isEmpty()) {
             m_info->setHtml(
-                tr("<i>No items yet. Use <b>New password…</b> or "
-                   "<b>New note…</b> to create one.</i>"));
+                tr("<i>No items yet. Use <b>New password…</b>, "
+                   "<b>New note…</b>, or import a photo/video.</i>"));
         } else if (!m_filter.trimmed().isEmpty() || !m_currentType.isEmpty()) {
             m_info->setHtml(tr("<i>No items match the current view.</i>"));
         } else {
             m_info->setHtml(tr("<i>Select an item to see details.</i>"));
         }
+        return;
+    }
+
+    if (row->type == QLatin1String(kPhotoType)
+        || row->type == QLatin1String(kVideoType)) {
+        const QJsonObject meta = parseJsonObject(row->meta.toStdString());
+        const int width = meta.value(QStringLiteral("width")).toInt();
+        const int height = meta.value(QStringLiteral("height")).toInt();
+        const qint64 duration =
+            meta.value(QStringLiteral("duration_ms")).toInteger();
+
+        QString size = QStringLiteral("—");
+        QString storage = QStringLiteral("—");
+        std::vector<FileRecord> files;
+        std::string fileError;
+        if (m_session->files().listForItem(row->id.toStdString(), &files,
+                                           &fileError)
+            && !files.empty()) {
+            size = QLocale().formattedDataSize(
+                static_cast<qint64>(files.front().sizeBytes));
+            storage = files.front().storage == FileStorage::External
+                ? tr("External encrypted file")
+                : tr("Embedded in vault database");
+        }
+
+        QString details;
+        if (width > 0 && height > 0) {
+            details = tr("<tr><td><b>Dimensions</b></td><td>%1 × %2</td></tr>")
+                          .arg(width)
+                          .arg(height);
+        }
+        if (duration > 0) {
+            const qint64 seconds = duration / 1000;
+            details += tr("<tr><td><b>Duration</b></td><td>%1:%2</td></tr>")
+                           .arg(seconds / 60, 2, 10, QLatin1Char('0'))
+                           .arg(seconds % 60, 2, 10, QLatin1Char('0'));
+        }
+
+        m_info->setHtml(
+            tr("<h3>%1</h3>"
+               "<table cellspacing=\"4\">"
+               "<tr><td><b>Type</b></td><td>%2</td></tr>"
+               "<tr><td><b>Classification</b></td><td>%3</td></tr>"
+               "<tr><td><b>Size</b></td><td>%4</td></tr>"
+               "<tr><td><b>Storage</b></td><td>%5</td></tr>"
+               "<tr><td><b>Modified</b></td><td>%6</td></tr>"
+               "%7</table>"
+               "<p><i>Double-click or use View… to open this media item.</i></p>")
+                .arg(row->title.toHtmlEscaped(), typeLabel(*row),
+                     classificationLabel(row->classification).toHtmlEscaped(),
+                     size, storage, updatedText(row->updatedAt), details));
+        emit statusMessage(tr("Selected: %1").arg(row->title));
         return;
     }
 
@@ -687,10 +792,15 @@ void VaultView::showContextMenu(QAbstractItemView *view, const QPoint &pos)
     const ItemRow *row = id.isEmpty() ? nullptr : rowForId(id);
     const bool hasSelection = row != nullptr;
     const bool isPassword = row && row->type == QLatin1String(kPasswordType);
+    const bool isMedia = row
+        && (row->type == QLatin1String(kPhotoType)
+            || row->type == QLatin1String(kVideoType));
 
     QMenu menu(this);
     QAction *addPasswordAction = menu.addAction(tr("New password…"));
     QAction *addNoteAction = menu.addAction(tr("New note…"));
+    QAction *addPhotoAction = menu.addAction(tr("Import photo…"));
+    QAction *addVideoAction = menu.addAction(tr("Import video…"));
     menu.addSeparator();
     QAction *viewAction = menu.addAction(tr("View…"));
     QAction *editAction = menu.addAction(tr("Edit…"));
@@ -698,8 +808,8 @@ void VaultView::showContextMenu(QAbstractItemView *view, const QPoint &pos)
     menu.addSeparator();
     QAction *deleteAction = menu.addAction(tr("Delete"));
 
-    viewAction->setEnabled(isPassword);
-    editAction->setEnabled(hasSelection);
+    viewAction->setEnabled(isPassword || isMedia);
+    editAction->setEnabled(hasSelection && !isMedia);
     copyUsernameAction->setEnabled(isPassword);
     deleteAction->setEnabled(hasSelection);
 
@@ -708,6 +818,10 @@ void VaultView::showContextMenu(QAbstractItemView *view, const QPoint &pos)
         addEntry();
     else if (chosen == addNoteAction)
         addNote();
+    else if (chosen == addPhotoAction)
+        importPhoto();
+    else if (chosen == addVideoAction)
+        importVideo();
     else if (chosen == viewAction)
         viewSelectedEntry();
     else if (chosen == editAction)
@@ -917,6 +1031,125 @@ void VaultView::addNote()
     emit statusMessage(tr("Created note: %1").arg(data.title));
 }
 
+void VaultView::importPhoto()
+{
+    importMedia(false);
+}
+
+void VaultView::importVideo()
+{
+    importMedia(true);
+}
+
+bool VaultView::importMedia(bool video)
+{
+    if (!m_session)
+        return false;
+
+    const QString filter =
+        video ? tr("Videos (*.mp4 *.m4v *.mov *.webm *.mkv *.avi);;All files (*)")
+              : tr("Photos (*.png *.jpg *.jpeg *.gif *.webp *.bmp *.tif *.tiff);;All files (*)");
+    const QStringList paths = QFileDialog::getOpenFileNames(
+        this, video ? tr("Import videos") : tr("Import photos"), QString(),
+        filter);
+    if (paths.isEmpty())
+        return false;
+
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    QString lastId;
+    QString failure;
+    for (const QString &path : paths) {
+        const QFileInfo info(path);
+        const QMimeType mime = QMimeDatabase().mimeTypeForFile(path);
+        const bool mimeIsVideo = mime.name().startsWith(QLatin1String("video/"));
+        if (mimeIsVideo != video) {
+            failure = tr("“%1” is not a %2 file.")
+                          .arg(info.fileName(), video ? tr("video") : tr("photo"));
+            break;
+        }
+
+        QJsonObject meta;
+        QByteArray thumbnailBytes;
+        if (!video) {
+            QImageReader reader(path);
+            reader.setAutoTransform(true);
+            const QImage image = reader.read();
+            if (image.isNull()) {
+                failure = tr("Could not read image “%1”: %2")
+                              .arg(info.fileName(),
+                                   reader.errorString().isEmpty()
+                                       ? tr("unsupported image")
+                                       : reader.errorString());
+                break;
+            }
+            meta[QStringLiteral("width")] = image.width();
+            meta[QStringLiteral("height")] = image.height();
+
+            const QImage thumbnail = image.scaled(
+                512, 512, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            QBuffer buffer(&thumbnailBytes);
+            if (!buffer.open(QIODevice::WriteOnly)
+                || !thumbnail.save(&buffer, "JPEG", 85)) {
+                failure = tr("Could not create a thumbnail for “%1”.")
+                              .arg(info.fileName());
+                break;
+            }
+        }
+
+        NewItem item;
+        QString title = info.completeBaseName();
+        if (title.isEmpty())
+            title = info.fileName();
+        item.type = video ? kVideoType : kPhotoType;
+        item.classification = "C";
+        item.title = title.toStdString();
+        item.meta = QJsonDocument(meta).toJson(QJsonDocument::Compact).toStdString();
+        item.payload = "";
+
+        std::string itemId;
+        std::string itemError;
+        if (!m_session->items().create(item, &itemId, &itemError)) {
+            failure = tr("Could not create media item “%1”: %2")
+                          .arg(info.fileName(),
+                               QString::fromStdString(itemError));
+            break;
+        }
+
+        ImportFile file;
+        file.itemId = itemId;
+        file.name = info.fileName().toStdString();
+        file.mimeType = mime.name().toStdString();
+        file.sourcePath = QFile::encodeName(path).toStdString();
+        file.thumbnailPlaintext =
+            Bytes(thumbnailBytes.begin(), thumbnailBytes.end());
+
+        std::string fileId;
+        std::string fileError;
+        if (!m_session->files().import(file, &fileId, &fileError)) {
+            std::string ignored;
+            m_session->items().softDelete(itemId, &ignored);
+            failure = tr("Could not import “%1”: %2")
+                          .arg(info.fileName(),
+                               QString::fromStdString(fileError));
+            break;
+        }
+        lastId = QString::fromStdString(itemId);
+    }
+    QApplication::restoreOverrideCursor();
+
+    if (!failure.isEmpty()) {
+        QMessageBox::critical(this, tr("Could not import media"), failure);
+        return false;
+    }
+
+    selectTypeFilter(QString::fromLatin1(video ? kVideoType : kPhotoType));
+    reload(lastId);
+    emit statusMessage(
+        tr("Imported %1 %2.").arg(paths.size()).arg(video ? tr("video(s)")
+                                                         : tr("photo(s)")));
+    return true;
+}
+
 void VaultView::viewSelectedEntry()
 {
     if (!m_session)
@@ -931,6 +1164,10 @@ void VaultView::viewSelectedEntry()
         editSelectedNote();
     else if (row->type == QLatin1String(kPasswordType))
         viewSelectedPassword();
+    else if (row->type == QLatin1String(kPhotoType))
+        viewSelectedPhoto();
+    else if (row->type == QLatin1String(kVideoType))
+        viewSelectedVideo();
 }
 
 void VaultView::editSelectedEntry()
@@ -993,6 +1230,107 @@ bool VaultView::readPasswordItem(const QString &id,
         return false;
     }
     return true;
+}
+
+void VaultView::viewSelectedPhoto()
+{
+    if (!m_session)
+        return;
+
+    const QString id = selectedId();
+    const ItemRow *row = id.isEmpty() ? nullptr : rowForId(id);
+    if (!row || row->type != QLatin1String(kPhotoType))
+        return;
+    if (row->classification != QLatin1String("C")) {
+        QMessageBox::information(
+            this, tr("Photo"),
+            tr("This photo is not in the Confidential tier; secure media "
+               "viewing is not available in this build."));
+        return;
+    }
+
+    std::vector<FileRecord> files;
+    std::string error;
+    if (!m_session->files().listForItem(row->id.toStdString(), &files, &error)
+        || files.empty()) {
+        QMessageBox::critical(this, tr("Could not read photo"),
+                              QString::fromStdString(error));
+        return;
+    }
+
+    auto reader = m_session->files().openRead(files.front().id, &error);
+    if (!reader) {
+        QMessageBox::critical(this, tr("Could not read photo"),
+                              QString::fromStdString(error));
+        return;
+    }
+    if (reader->size() > static_cast<std::uint64_t>(std::numeric_limits<int>::max())) {
+        QMessageBox::critical(this, tr("Could not read photo"),
+                              tr("The photo is too large to display."));
+        return;
+    }
+
+    QByteArray data(static_cast<int>(reader->size()), '\0');
+    const std::size_t read = reader->read(
+        0, std::span<std::uint8_t>(
+               reinterpret_cast<std::uint8_t *>(data.data()),
+               static_cast<std::size_t>(data.size())),
+        &error);
+    if (read != static_cast<std::size_t>(data.size())) {
+        QMessageBox::critical(this, tr("Could not read photo"),
+                              QString::fromStdString(error));
+        return;
+    }
+
+    const QImage image = QImage::fromData(data);
+    data.fill('\0');
+    if (image.isNull()) {
+        QMessageBox::critical(this, tr("Could not read photo"),
+                              tr("The image format is not supported."));
+        return;
+    }
+
+    PhotoViewDialog dialog(row->title, image, this);
+    dialog.exec();
+}
+
+void VaultView::viewSelectedVideo()
+{
+    if (!m_session)
+        return;
+
+    const QString id = selectedId();
+    const ItemRow *row = id.isEmpty() ? nullptr : rowForId(id);
+    if (!row || row->type != QLatin1String(kVideoType))
+        return;
+    if (row->classification != QLatin1String("C")) {
+        QMessageBox::information(
+            this, tr("Video"),
+            tr("This video is not in the Confidential tier; secure media "
+               "viewing is not available in this build."));
+        return;
+    }
+
+    std::vector<FileRecord> files;
+    std::string error;
+    if (!m_session->files().listForItem(row->id.toStdString(), &files, &error)
+        || files.empty()) {
+        QMessageBox::critical(this, tr("Could not read video"),
+                              QString::fromStdString(error));
+        return;
+    }
+
+    auto reader = m_session->files().openRead(files.front().id, &error);
+    if (!reader) {
+        QMessageBox::critical(this, tr("Could not read video"),
+                              QString::fromStdString(error));
+        return;
+    }
+
+    VideoViewDialog dialog(row->title,
+                           QString::fromStdString(files.front().name),
+                           std::move(reader), this);
+    dialog.exec();
 }
 
 void VaultView::viewSelectedPassword()
@@ -1302,6 +1640,15 @@ void VaultView::deleteSelectedEntry()
     }
 
     std::string error;
+    if (type == QLatin1String(kPhotoType) || type == QLatin1String(kVideoType)) {
+        std::vector<FileRecord> files;
+        if (m_session->files().listForItem(id.toStdString(), &files, &error)) {
+            for (const FileRecord &file : files) {
+                if (!m_session->files().softDelete(file.id, &error))
+                    break;
+            }
+        }
+    }
     if (!m_session->items().softDelete(id.toStdString(), &error)) {
         QMessageBox::critical(this, tr("Could not delete item"),
                               QString::fromStdString(error));
@@ -1311,6 +1658,10 @@ void VaultView::deleteSelectedEntry()
     reload();
     if (type == QLatin1String(kNoteType))
         emit statusMessage(tr("Deleted note: %1").arg(title));
+    else if (type == QLatin1String(kPhotoType))
+        emit statusMessage(tr("Deleted photo: %1").arg(title));
+    else if (type == QLatin1String(kVideoType))
+        emit statusMessage(tr("Deleted video: %1").arg(title));
     else
         emit statusMessage(tr("Deleted password: %1").arg(title));
 }

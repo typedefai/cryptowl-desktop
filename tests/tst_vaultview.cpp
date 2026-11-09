@@ -6,6 +6,7 @@
 #include "EncryptedContentWidget.h"
 #include "crypto/Bytes.h"
 #include "crypto/ProtectedValue.h"
+#include "vault/FileRepository.h"
 #include "vault/ItemRepository.h"
 #include "vault/VaultDatabase.h"
 #include "vault/VaultSession.h"
@@ -15,6 +16,8 @@
 #include <QDialog>
 #include <QDir>
 #include <QFile>
+#include <QImage>
+#include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QPointer>
@@ -33,6 +36,7 @@
 
 using cryptowl::crypto::Bytes;
 using cryptowl::crypto::ProtectedValue;
+using cryptowl::vault::ImportFile;
 using cryptowl::vault::ItemRecord;
 using cryptowl::vault::ItemRepository;
 using cryptowl::vault::ItemSummary;
@@ -93,6 +97,7 @@ private slots:
     void editorsLoadSecretsLazily();
     void topSecretRevealAndEditor();
     void secretAccessRequiresPasswordEachTime();
+    void showsPhotoAndOpensViewer();
     void filtersPasswords();
     void switchesToIconView();
 };
@@ -125,11 +130,15 @@ void TestVaultView::showsStoredPasswords()
     QVERIFY(info);
 
     QCOMPARE(structure->topLevelItemCount(), 1);
-    QCOMPARE(structure->topLevelItem(0)->childCount(), 2);
+    QCOMPARE(structure->topLevelItem(0)->childCount(), 4);
     QVERIFY(structure->topLevelItem(0)->child(0)->text(0).contains(
         QStringLiteral("Passwords (2)")));
     QVERIFY(structure->topLevelItem(0)->child(1)->text(0).contains(
         QStringLiteral("Notes (0)")));
+    QVERIFY(structure->topLevelItem(0)->child(2)->text(0).contains(
+        QStringLiteral("Photos (0)")));
+    QVERIFY(structure->topLevelItem(0)->child(3)->text(0).contains(
+        QStringLiteral("Videos (0)")));
     QCOMPARE(details->topLevelItemCount(), 2);
 
     QTreeWidgetItem *github = nullptr;
@@ -1073,6 +1082,79 @@ void TestVaultView::secretAccessRequiresPasswordEachTime()
         QVERIFY(record.payload.find("new-secret") != std::string::npos);
     }
     QVERIFY(foundNewPassword);
+}
+
+void TestVaultView::showsPhotoAndOpensViewer()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString databasePath = dir.filePath(QStringLiteral("vault.db"));
+    QVERIFY(VaultDatabase::create(databasePath.toStdString(), kVaultKey));
+
+    std::string error;
+    auto session = openSession(databasePath, &error);
+    QVERIFY2(session != nullptr, error.c_str());
+
+    const QString imagePath = dir.filePath(QStringLiteral("sunset.png"));
+    QImage image(10, 6, QImage::Format_RGB32);
+    image.fill(Qt::red);
+    QVERIFY(image.save(imagePath));
+
+    NewItem item;
+    item.type = "photo";
+    item.classification = "C";
+    item.title = "Sunset";
+    item.meta = "{\"width\":10,\"height\":6}";
+    std::string itemId;
+    QVERIFY2(session->items().create(item, &itemId, &error), error.c_str());
+
+    ImportFile file;
+    file.itemId = itemId;
+    file.name = "sunset.png";
+    file.mimeType = "image/png";
+    file.sourcePath = imagePath.toStdString();
+    std::string fileId;
+    QVERIFY2(session->files().import(file, &fileId, &error), error.c_str());
+
+    VaultView view(QStringLiteral("/tmp/mock-vault"), session);
+    auto *structure = view.findChild<QTreeWidget *>(QStringLiteral("vaultStructure"));
+    auto *details = view.findChild<QTreeWidget *>(QStringLiteral("vaultDetails"));
+    QVERIFY(structure);
+    QVERIFY(details);
+    QVERIFY(structure->topLevelItem(0)->child(2)->text(0).contains(
+        QStringLiteral("Photos (1)")));
+
+    QTreeWidgetItem *photo = nullptr;
+    for (int i = 0; i < details->topLevelItemCount(); ++i) {
+        if (details->topLevelItem(i)->text(0) == QStringLiteral("Sunset"))
+            photo = details->topLevelItem(i);
+    }
+    QVERIFY(photo);
+    details->setCurrentItem(photo);
+
+    bool seen = false;
+    QString failure;
+    QTimer::singleShot(0, [&] {
+        auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+        if (!dialog) {
+            failure = QStringLiteral("photo viewer not found");
+            return;
+        }
+        auto *imageLabel =
+            dialog->findChild<QLabel *>(QStringLiteral("photoViewImage"));
+        if (!imageLabel) {
+            failure = QStringLiteral("photo image widget not found");
+            dialog->reject();
+            return;
+        }
+        seen = true;
+        if (imageLabel->pixmap().isNull())
+            failure = QStringLiteral("photo image was not loaded");
+        dialog->reject();
+    });
+    view.viewSelectedEntry();
+    QVERIFY2(failure.isEmpty(), qPrintable(failure));
+    QVERIFY(seen);
 }
 
 void TestVaultView::filtersPasswords()

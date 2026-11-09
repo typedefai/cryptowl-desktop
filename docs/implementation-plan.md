@@ -17,8 +17,9 @@ Status legend: ☐ todo · ◐ in progress · ✅ done
 | 4 | Good UX | password-manager layout (see D5) |
 | 5 | Diff / version history | `t_item_version` + fingerprint + text diff |
 
-Out of scope for v1: photos/videos (`t_file`), Moments, AI features, mobile
-interop beyond the vault format itself.
+Out of scope for v1: Moments, AI features, mobile interop beyond the vault
+format itself. Photos/videos are implemented as a C-tier media slice; S/T media
+and Windows WinFsp mounts remain later work.
 
 ## Decisions
 
@@ -148,6 +149,20 @@ logged.
   TopSecretKEK; no recovery and no biometric factor on desktop
 - History panel: version list, messages, text diff, restore
 - Exit: manual walkthrough of goals 1–5
+
+### P4b — Media and native media drive ◐
+
+- ✅ Embedded/external file policy with `config.json.files.embed_max_bytes`
+  (default 512 KiB); CWO1 chunked external envelopes (64 KiB chunks).
+- ✅ `FileRepository` FEK import/read/thumbnail/soft-delete, `t_file` storage,
+  and a portable `VirtualMediaFs` read-only tree.
+- ✅ Photo/video import from the app, image thumbnails, image viewer and
+  Qt Multimedia video viewer over a custom encrypted `QIODevice`.
+- ◐ Native media drive: read-only FUSE 3/macFUSE backend and mount/unmount
+  actions on Linux/macOS; Windows WinFsp adapter, automatic refresh, video
+  poster frames, S/T media and FUSE write support remain pending.
+- ◐ Media history/replacement is not represented in `t_item_version`; v1 is
+  import/create-only.
 
 ### P5 — Hardening
 

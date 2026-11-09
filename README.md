@@ -15,9 +15,11 @@ vault home with recent vaults, password unlock against `vault.meta`,
 QtKeychain-backed device-secret migration, vault creation with a SQLCipher
 `vault.db`, S-tier password CRUD plus confidential/secret notes in a
 KeePass-style workspace, remembered Secret access by default (KEK only, with an
-option to require per-access master-password prompts), and a vault-info dialog,
-smoke tests) and the byte-exact **crypto core** (P1) of the vault format.
-`config.sig` verification and the remaining item types are next — see
+option to require per-access master-password prompts), C-tier photo/video import
+and viewing, an optional read-only FUSE media drive on Linux/macOS, and a
+vault-info dialog, smoke tests) and the byte-exact **crypto core** (P1) of the
+vault format. `config.sig` verification, Windows WinFsp media mounting, and the
+remaining item types are next — see
 [docs/implementation-plan.md](docs/implementation-plan.md).
 
 > SQLCipher **5.0.0-beta.1** is pre-release and uses v5 defaults; existing
@@ -39,12 +41,14 @@ password on every access, and C-tier items remain directly readable.
 ## Requirements
 
 - CMake ≥ 3.24 and a C++20 compiler (MSVC 2022, clang, gcc)
-- Qt 6.8+ with the Widgets module (CI builds against 6.9.3; local development is
-  tested with Qt 6.12)
+- Qt 6.8+ with the Widgets, Multimedia, and MultimediaWidgets modules (CI
+  builds against 6.9.3; local development is tested with Qt 6.12)
 - OpenSSL 3.5.8 LTS recommended (3.0+ accepted) development libraries
   (macOS/Windows: install manually; Linux: `libssl-dev` or equivalent)
 - QtKeychain (fetched automatically) for device-secret storage; Linux needs a
   Secret Service or KWallet backend
+- Optional: FUSE 3 (`libfuse3-dev`) on Linux or macFUSE/FUSE-T on macOS for the
+  read-only media drive
 - Ninja (recommended; ships with the Qt installer under `Tools/Ninja`)
 
 ## Build
@@ -58,7 +62,8 @@ cmake -S . -B build/debug -G Ninja \
 cmake --build build/debug
 ```
 
-Linux (distro Qt, e.g. `qt6-base-dev`, plus `libssl-dev`):
+Linux (distro Qt, e.g. `qt6-base-dev qt6-multimedia-dev`, plus
+`libssl-dev`; optional media drive: `libfuse3-dev`):
 
 ```bash
 cmake -S . -B build/debug -G Ninja

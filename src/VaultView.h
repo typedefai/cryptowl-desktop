@@ -42,6 +42,8 @@ public:
     void showIcons();
     void addEntry();
     void addNote();
+    void importPhoto();
+    void importVideo();
     void viewSelectedEntry();
     void editSelectedEntry();
     void deleteSelectedEntry();
@@ -60,6 +62,7 @@ private:
         QString username;
         QString url;
         QString classification;
+        QString meta;
         qint64 updatedAt = 0;
     };
 
@@ -72,8 +75,11 @@ private:
     void updateGroupCounts();
     void showContextMenu(QAbstractItemView *view, const QPoint &pos);
     void viewSelectedPassword();
+    void viewSelectedPhoto();
+    void viewSelectedVideo();
     void editSelectedPassword();
     void editSelectedNote();
+    bool importMedia(bool video);
     bool readPasswordItem(const QString &id, const QString &classification,
                           cryptowl::vault::ItemRecord *record, QString *error);
     bool openSecretSession(

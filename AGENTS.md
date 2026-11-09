@@ -56,10 +56,13 @@ deliberately).
 - `vault.meta`: v3, canonical sorted-key JSON, MAC excludes its own field,
   binary fields in Crockford Base32 without padding, atomic writes
   (`.tmp` + rename).
-- File envelope = `nonce(12) || ciphertext || tag(16)`; C tier key
+- Embedded file envelope = `nonce(12) || ciphertext || tag(16)`; C tier key
   `FEK = HKDF-SHA256(VaultKey, info="file")`, S/T tier key = the item's DEK.
   `size_bytes ≤ embed_max_bytes` (default 512 KiB, from `config.json`) is
-  embedded in `t_file.content`; larger goes to `attachments/<file_id>`.
+  embedded in `t_file.content`; larger files are CWO1 chunked envelopes in
+  `attachments/<file_id>` (22-byte header, 64 KiB chunks, chunk nonce
+  `uint64_be(index) || iv_prefix`, AAD = file id). Thumbnails are embedded
+  with AAD `"<file_id>:thumb"`.
 - Version fingerprint =
   `HMAC-SHA256(HFK, title \0 classification \0 payload)` with
   `HFK = HKDF-SHA256(VaultKey, info="fingerprint", 32)` (HMAC, not a raw

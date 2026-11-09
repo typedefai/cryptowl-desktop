@@ -164,13 +164,26 @@ Encryption is **consistent between the database and files at every tier**: a fil
 
 | Tier | Database content | Files | Key available |
 | --- | --- | --- | --- |
-| C — Confidential | SQLCipher only (VaultKey) | whole-file AES-256-GCM with FEK = `HKDF-SHA256(VaultKey, info="file")` | after vault unlock (password or fingerprint remember-me) |
-| S — Secret | per-item DEK, AES-256-GCM, wrapped by KEK | **same per-item DEK**, whole-file AES-256-GCM | fingerprint per access |
-| T — Top Secret | per-item DEK, AES-256-GCM, wrapped by TopSecretKEK | **same per-item DEK**, whole-file AES-256-GCM | fingerprint + secondary password per access |
+| C — Confidential | SQLCipher only (VaultKey) | embedded: whole-file AES-256-GCM with FEK = `HKDF-SHA256(VaultKey, info="file")`; external: CWO1 chunked GCM with the same FEK | after vault unlock (password or fingerprint remember-me) |
+| S — Secret | per-item DEK, AES-256-GCM, wrapped by KEK | **same per-item DEK**, whole-file or chunked GCM | fingerprint per access |
+| T — Top Secret | per-item DEK, AES-256-GCM, wrapped by TopSecretKEK | **same per-item DEK**, whole-file or chunked GCM | fingerprint + secondary password per access |
 
 - **C tier**: files share the DB's key material — FEK is derived from VaultKey (the SQLCipher key), so no separate wrapped key is stored; nothing extra is unlocked.
 - **S/T tiers**: one per-item DEK encrypts both the record content and the item's files (AAD = record id for the row, file id for each file). No per-file keys — a single unwrap yields both.
 - Thumbnails are encrypted with the same key as their original (C: FEK; S/T: the item's DEK).
+
+## Native Media Drive (desktop)
+
+- While a vault is unlocked, the desktop client can expose **C-tier photo and
+  video files** as a read-only native drive through FUSE 3/macFUSE on
+  Linux/macOS (Windows WinFsp is a later adapter).
+- The virtual tree contains `/Photos` and `/Videos`; names are derived from
+  item titles with original extensions. No notes or passwords are exposed.
+- Reads use the same encrypted random-access readers as the in-app viewers;
+  no plaintext media is written to disk.
+- Mounting is explicit, and locking the vault always unmounts and invalidates
+  readers. S/T media remains in-app until per-item drive unlock exists.
+- The mount is read-only; writes return `EROFS` (or the platform equivalent).
 
 ## Fingerprint / Biometric Unlock
 

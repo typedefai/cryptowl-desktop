@@ -1,5 +1,6 @@
 #pragma once
 
+#include "MediaMountManager.h"
 #include "RecentVaultsStore.h"
 
 #include <QHash>
@@ -61,10 +62,15 @@ private:
     QAction *m_topSecretAction = nullptr;
     QAction *m_addEntryAction = nullptr;
     QAction *m_addNoteAction = nullptr;
+    QAction *m_importPhotoAction = nullptr;
+    QAction *m_importVideoAction = nullptr;
     QAction *m_editEntryAction = nullptr;
     QAction *m_deleteEntryAction = nullptr;
     QAction *m_copyUsernameAction = nullptr;
     QAction *m_detailsAction = nullptr;
     QAction *m_iconsAction = nullptr;
+    QAction *m_mountMediaAction = nullptr;
+    QAction *m_unmountMediaAction = nullptr;
     QLineEdit *m_searchEdit = nullptr;
+    MediaMountManager m_mediaMount;
 };

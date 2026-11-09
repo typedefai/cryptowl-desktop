@@ -4,6 +4,22 @@ qt_add_executable(tst_mainwindow
     tst_mainwindow.cpp
 )
 
+qt_add_executable(tst_fusemount
+    tst_fusemount.cpp
+)
+
+target_link_libraries(tst_fusemount PRIVATE cryptowl_ui Qt6::Test)
+
+add_test(NAME tst_fusemount COMMAND tst_fusemount)
+
+qt_add_executable(tst_encryptedmediadevice
+    tst_encryptedmediadevice.cpp
+)
+
+target_link_libraries(tst_encryptedmediadevice PRIVATE cryptowl_ui Qt6::Test)
+
+add_test(NAME tst_encryptedmediadevice COMMAND tst_encryptedmediadevice)
+
 target_link_libraries(tst_mainwindow PRIVATE cryptowl_ui Qt6::Test)
 
 add_test(NAME tst_mainwindow COMMAND tst_mainwindow)

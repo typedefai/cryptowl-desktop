@@ -4,6 +4,8 @@
 
 #include <QDialog>
 
+#include <cstdint>
+
 class QCheckBox;
 class QLabel;
 class QLineEdit;
@@ -20,6 +22,7 @@ public:
     cryptowl::crypto::ProtectedValue takeVaultKey();
     cryptowl::crypto::ProtectedValue takeSmk();
     bool rememberSecretAccess() const;
+    std::uint64_t embedMaxBytes() const;
 
     void reject() override;
 
@@ -39,4 +42,5 @@ private:
     QPushButton *m_unlockButton = nullptr;
     cryptowl::crypto::ProtectedValue m_vaultKey;
     cryptowl::crypto::ProtectedValue m_smk;
+    std::uint64_t m_embedMaxBytes = 512 * 1024;
 };

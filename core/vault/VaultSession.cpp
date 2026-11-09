@@ -4,12 +4,14 @@
 #include "crypto/Bytes.h"
 #include "crypto/Random.h"
 #include "crypto/Trace.h"
+#include "vault/FileRepository.h"
 #include "vault/ItemRepository.h"
 
 #include <sqlite3.h>
 
 #include <chrono>
 #include <exception>
+#include <filesystem>
 #include <string>
 #include <utility>
 
@@ -279,7 +281,8 @@ std::unique_ptr<VaultSession> VaultSession::open(const std::string &databasePath
                                                  ProtectedValue vaultKey,
                                                  ProtectedValue smk,
                                                  std::string *error,
-                                                 bool rememberKek)
+                                                 bool rememberKek,
+                                                 std::uint64_t embedMaxBytes)
 {
     if (vaultKey.size() != 32) {
         setError(error, "vault key must be 32 bytes");
@@ -311,6 +314,11 @@ std::unique_ptr<VaultSession> VaultSession::open(const std::string &databasePath
     session->m_kek = std::move(kek);
     session->m_items = std::make_unique<ItemRepository>(
         session->m_database, session->m_kek.span(), session->m_vaultKey.span());
+    const std::filesystem::path attachments =
+        std::filesystem::path(databasePath).parent_path() / "attachments";
+    session->m_files = std::make_unique<FileRepository>(
+        session->m_database, attachments.string(), session->m_vaultKey.span(),
+        embedMaxBytes);
     return session;
 }
 
@@ -322,6 +330,16 @@ ItemRepository &VaultSession::items()
 const ItemRepository &VaultSession::items() const
 {
     return *m_items;
+}
+
+FileRepository &VaultSession::files()
+{
+    return *m_files;
+}
+
+const FileRepository &VaultSession::files() const
+{
+    return *m_files;
 }
 
 } // namespace cryptowl::vault

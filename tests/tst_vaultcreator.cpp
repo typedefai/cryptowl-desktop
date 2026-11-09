@@ -76,7 +76,15 @@ void TestVaultCreator::createsUnlockableVault()
 
     QFile configFile(QDir(vault).filePath(QStringLiteral("config.json")));
     QVERIFY(configFile.open(QIODevice::ReadOnly));
-    QCOMPARE(configFile.readAll(), QByteArrayLiteral("{\"name\":\"personal\"}"));
+    const QJsonObject config =
+        QJsonDocument::fromJson(configFile.readAll()).object();
+    QCOMPARE(config.value(QStringLiteral("name")).toString(),
+             QStringLiteral("personal"));
+    QCOMPARE(config.value(QStringLiteral("files"))
+                 .toObject()
+                 .value(QStringLiteral("embed_max_bytes"))
+                 .toInt(),
+             512 * 1024);
 
     QVERIFY(writeFile(QDir(vault).filePath(QStringLiteral("device_secret")),
                       QByteArray(reinterpret_cast<const char *>(capturedSecret.data()),

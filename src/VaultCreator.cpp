@@ -223,8 +223,11 @@ VaultCreator::Result VaultCreator::create(const QString &vaultPath,
     macObject[QStringLiteral("value")] = encode(metaMac);
     meta[QStringLiteral("mac")] = macObject;
 
+    QJsonObject files;
+    files[QStringLiteral("embed_max_bytes")] = 512 * 1024;
     QJsonObject config;
     config[QStringLiteral("name")] = vaultId;
+    config[QStringLiteral("files")] = files;
     const QByteArray configJson = QJsonDocument(config).toJson(QJsonDocument::Compact);
     const Bytes configMac = hmacSha256(
         macKey, bytesOf(std::string_view(configJson.constData(),

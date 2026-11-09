@@ -3,11 +3,13 @@
 #include "crypto/ProtectedValue.h"
 #include "vault/VaultDatabase.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 
 namespace cryptowl::vault {
 
+class FileRepository;
 class ItemRepository;
 
 class VaultSession
@@ -20,7 +22,8 @@ public:
                                               crypto::ProtectedValue vaultKey,
                                               crypto::ProtectedValue smk,
                                               std::string *error = nullptr,
-                                              bool rememberKek = false);
+                                              bool rememberKek = false,
+                                              std::uint64_t embedMaxBytes = 512 * 1024);
 
     ~VaultSession();
     VaultSession(const VaultSession &) = delete;
@@ -28,6 +31,9 @@ public:
 
     ItemRepository &items();
     const ItemRepository &items() const;
+
+    FileRepository &files();
+    const FileRepository &files() const;
 
     bool hasKek() const
     {
@@ -46,6 +52,7 @@ private:
     crypto::ProtectedValue m_vaultKey;
     crypto::ProtectedValue m_kek;
     std::unique_ptr<ItemRepository> m_items;
+    std::unique_ptr<FileRepository> m_files;
 };
 
 } // namespace cryptowl::vault

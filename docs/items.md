@@ -133,19 +133,41 @@ kept from the v1 core.
 
 ## File storage: embedded by default
 
-- Envelope (one format, two storages):
+- **Embedded files** (`size_bytes ≤ embed_max_bytes`, default **512 KiB**
+  from `config.json` under `files.embed_max_bytes`):
   `envelope = nonce(12) || ciphertext || tag(16)`, AES-256-GCM,
-  key = FEK (C tier) or the item's DEK (S/T), AAD = file id (thumbnails:
-  AAD = `"<file_id>:thumb"`).
-- `size_bytes` (plaintext) ≤ `embed_max_bytes` (default **512 KiB**, from
-  `config.json`) → envelope in `t_file.content`; larger → same envelope in
-  `attachments/<file_id>`, `external_name` set. Storage choice is made once at
-  write time; readers branch on `storage`.
-- Thumbnails always embedded (`t_file.thumbnail`), same key as the original.
+  key = FEK (C tier) or the item's DEK (S/T), AAD = file id.
+  Stored in `t_file.content`.
+- **External files** (larger): CWO1 chunked envelope in
+  `attachments/<file_id>`, `external_name` set:
+  ```text
+  header 22 B = "CWO1" | u16 version(1) | u32 chunk_size(65536)
+                | u64 chunk_count | iv_prefix(4)
+  record N   = AES-256-GCM(key, chunk N,
+                           nonce = uint64_be(N) || iv_prefix,
+                           AAD = file_id) || tag(16)
+  ```
+  `t_file.size_bytes` is authoritative; readers validate the header against
+  it and decrypt only requested chunks. The final chunk may be shorter.
+  Storage choice is made once at write time; readers branch on `storage`.
+- Thumbnails are always embedded (`t_file.thumbnail`), same key as the
+  original, with AAD = `"<file_id>:thumb"`.
 - Backup/transfer = copy 4 files + `vault.db` (+ `attachments/` only if
   large media exists).
 - Housekeeping: after mass deletes run `PRAGMA secure_delete`-verified
   `VACUUM` to reclaim blob pages.
+
+## Media drive (native virtual file system)
+
+- The desktop client can expose C-tier photo/video files as a **read-only**
+  native drive while the vault is unlocked.
+- Linux and macOS use FUSE 3/macFUSE (optional build dependency); Windows
+  WinFsp support is pending. The mount source is `VirtualMediaFs`, which
+  resolves `/Photos/...` and `/Videos/...` to the same encrypted file readers
+  used by the in-app viewers.
+- Mount/unmount is explicit; locking the vault always unmounts. No plaintext
+  media temp files are written. S/T media stays in the in-app viewers until
+  per-item drive unlock is designed.
 
 ## Folders (Explorer-style)
 
@@ -194,8 +216,8 @@ Planned plugin set (built-in types):
 | --- | --- | --- | --- | --- | --- |
 | `plain` | C (S optional) | text; C in `content`, S encrypted | – | text | **default**; anything textual — `.env.prod`, config snippets, notes |
 | `password` | S | encrypted JSON (username/url/secret/notes) | – | field-level (later) | devkit dev binding: KEK wrapped by SMK |
-| `photo` | C (T later) | – | 1 embedded + thumbnail | binary (thumbnails) | always embedded (small) |
-| `video` | C (T later) | – | 1 external (usually) + poster frame | binary | chunked envelope for streaming (spec with the video phase) |
+| `photo` | C (T later) | – | 1 file + thumbnail | binary (thumbnails) | embedded under threshold, external chunked above |
+| `video` | C (T later) | – | 1 file + poster frame | binary | external chunked for random access; embedded only when under threshold |
 
 Implementation order: **plain → password → photo → video** (plain first because
 it exercises the whole core: items, versioning, messages, UI registry).
@@ -256,8 +278,11 @@ Single-window browser; no dock/tab workspace:
 3. **P3 history UI**: version list with messages, text diff, restore,
    retention config.
 4. **P4 password plugin**: DEK/KEK path with dev SMK wrap (S tier).
-5. **P5 photo plugin**: envelope codec, embedded storage + thumbnails.
+5. **P5 photo plugin**: envelope codec, embedded/external storage + thumbnails.
+   *(implemented for C-tier import/view; video poster frames pending)*
 6. **P6 video plugin**: chunked envelope, external storage, streaming.
+   *(implemented for C-tier import/playback; native media drive is FUSE on
+   Linux/macOS; WinFsp pending)*
 
 Android re-bases on this file after P1–P2 stabilize; its `SchemaApplier`
 becomes the same idempotent `schema.sql` ensure.

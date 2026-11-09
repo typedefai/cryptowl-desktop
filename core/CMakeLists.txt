@@ -10,13 +10,19 @@ add_library(cryptowl_core STATIC
     crypto/Argon2.cpp
     crypto/Bytes.cpp
     crypto/Crockford32.cpp
+    crypto/FileEnvelope.h
+    crypto/FileEnvelope.cpp
     crypto/Hash.cpp
     crypto/ProtectedValue.cpp
     crypto/Random.cpp
     crypto/Trace.h
+    vault/FileRepository.h
+    vault/FileRepository.cpp
     vault/ItemRepository.h
     vault/ItemRepository.cpp
     vault/Schema.h
+    vault/VirtualMediaFs.h
+    vault/VirtualMediaFs.cpp
     vault/VaultDatabase.cpp
     vault/VaultSession.h
     vault/VaultSession.cpp

@@ -16,13 +16,21 @@ option(CRYPTOWL_TRACE_CRYPTO
     "INSECURE: log all crypto flows including raw keys and plaintext (never ship)"
     OFF)
 
+option(CRYPTOWL_ENABLE_FUSE
+    "Build the native FUSE media drive backend when libfuse3 is available"
+    ON)
+
 if(CRYPTOWL_TRACE_CRYPTO)
     message(WARNING
         "CRYPTOWL_TRACE_CRYPTO is enabled: raw keys and plaintext WILL be "
         "logged. Never ship this build or use it with a real vault.")
 endif()
 
-find_package(Qt6 6.8 REQUIRED COMPONENTS Widgets)
+find_package(Qt6 6.8 REQUIRED COMPONENTS
+    Widgets
+    Multimedia
+    MultimediaWidgets
+)
 
 qt_standard_project_setup()
 

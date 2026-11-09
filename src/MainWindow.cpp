@@ -122,8 +122,22 @@ void MainWindow::createActions()
             view->addNote();
     });
 
+    m_importPhotoAction = new QAction(
+        style()->standardIcon(QStyle::SP_DirIcon), tr("Import &photo…"), this);
+    connect(m_importPhotoAction, &QAction::triggered, this, [this] {
+        if (auto *view = currentVaultView())
+            view->importPhoto();
+    });
+
+    m_importVideoAction = new QAction(
+        style()->standardIcon(QStyle::SP_DirIcon), tr("Import &video…"), this);
+    connect(m_importVideoAction, &QAction::triggered, this, [this] {
+        if (auto *view = currentVaultView())
+            view->importVideo();
+    });
+
     m_editEntryAction = new QAction(
-        style()->standardIcon(QStyle::SP_FileDialogDetailedView), tr("&Edit password…"),
+        style()->standardIcon(QStyle::SP_FileDialogDetailedView), tr("&Edit item…"),
         this);
     connect(m_editEntryAction, &QAction::triggered, this, [this] {
         if (auto *view = currentVaultView())
@@ -131,7 +145,7 @@ void MainWindow::createActions()
     });
 
     m_deleteEntryAction = new QAction(
-        style()->standardIcon(QStyle::SP_TrashIcon), tr("&Delete password"), this);
+        style()->standardIcon(QStyle::SP_TrashIcon), tr("&Delete item"), this);
     connect(m_deleteEntryAction, &QAction::triggered, this, [this] {
         if (auto *view = currentVaultView())
             view->deleteSelectedEntry();
@@ -141,6 +155,36 @@ void MainWindow::createActions()
     connect(m_copyUsernameAction, &QAction::triggered, this, [this] {
         if (auto *view = currentVaultView())
             view->copySelectedUsername();
+    });
+
+    m_mountMediaAction = new QAction(
+        style()->standardIcon(QStyle::SP_DriveHDIcon), tr("&Mount media drive"), this);
+    connect(m_mountMediaAction, &QAction::triggered, this, [this] {
+        auto *view = currentVaultView();
+        if (!view)
+            return;
+        const QString path = canonicalVaultPath(view->vaultPath());
+        auto session = m_sessions.find(path);
+        if (session == m_sessions.end())
+            return;
+        QString error;
+        if (!m_mediaMount.mount(path, session->second, &error)) {
+            QMessageBox::warning(this, tr("Could not mount media drive"), error);
+        } else {
+            QMessageBox::information(
+                this, tr("Media drive mounted"),
+                tr("The read-only media drive is available at:\n%1")
+                    .arg(QDir::toNativeSeparators(m_mediaMount.mountPoint())));
+        }
+        updateWorkspaceActions();
+    });
+
+    m_unmountMediaAction = new QAction(
+        style()->standardIcon(QStyle::SP_DriveHDIcon), tr("&Unmount media drive"),
+        this);
+    connect(m_unmountMediaAction, &QAction::triggered, this, [this] {
+        m_mediaMount.unmount();
+        updateWorkspaceActions();
     });
 
     m_detailsAction = new QAction(
@@ -176,6 +220,8 @@ void MainWindow::createMenus()
     QMenu *editMenu = menuBar()->addMenu(tr("&Edit"));
     editMenu->addAction(m_addEntryAction);
     editMenu->addAction(m_addNoteAction);
+    editMenu->addAction(m_importPhotoAction);
+    editMenu->addAction(m_importVideoAction);
     editMenu->addAction(m_editEntryAction);
     editMenu->addAction(m_deleteEntryAction);
     editMenu->addSeparator();
@@ -184,6 +230,9 @@ void MainWindow::createMenus()
     QMenu *viewMenu = menuBar()->addMenu(tr("&View"));
     viewMenu->addAction(m_detailsAction);
     viewMenu->addAction(m_iconsAction);
+    viewMenu->addSeparator();
+    viewMenu->addAction(m_mountMediaAction);
+    viewMenu->addAction(m_unmountMediaAction);
 
     QMenu *helpMenu = menuBar()->addMenu(tr("&Help"));
     QAction *aboutAction = helpMenu->addAction(tr("&About"));
@@ -200,11 +249,15 @@ void MainWindow::createToolBar()
     toolBar->addSeparator();
     toolBar->addAction(m_addEntryAction);
     toolBar->addAction(m_addNoteAction);
+    toolBar->addAction(m_importPhotoAction);
+    toolBar->addAction(m_importVideoAction);
     toolBar->addAction(m_editEntryAction);
     toolBar->addAction(m_deleteEntryAction);
     toolBar->addSeparator();
     toolBar->addAction(m_detailsAction);
     toolBar->addAction(m_iconsAction);
+    toolBar->addAction(m_mountMediaAction);
+    toolBar->addAction(m_unmountMediaAction);
     toolBar->addSeparator();
 
     m_searchEdit = new QLineEdit(toolBar);
@@ -303,6 +356,7 @@ void MainWindow::unlockVault(const QString &rawPath)
     auto vaultKey = dialog.takeVaultKey();
     auto smk = dialog.takeSmk();
     const bool rememberSecretAccess = dialog.rememberSecretAccess();
+    const std::uint64_t embedMaxBytes = dialog.embedMaxBytes();
     if (vaultKey.empty() || smk.empty()) {
         statusBar()->showMessage(tr("Vault unlock failed: %1").arg(path));
         return;
@@ -312,7 +366,7 @@ void MainWindow::unlockVault(const QString &rawPath)
     auto session = cryptowl::vault::VaultSession::open(
         QDir(path).filePath(QStringLiteral("vault.db")).toUtf8().toStdString(),
         std::move(vaultKey), std::move(smk), &sessionError,
-        rememberSecretAccess);
+        rememberSecretAccess, embedMaxBytes);
     if (!session) {
         QMessageBox::critical(
             this, tr("Could not open vault database"),
@@ -331,6 +385,8 @@ void MainWindow::unlockVault(const QString &rawPath)
 void MainWindow::lockVault(const QString &rawPath)
 {
     const QString path = canonicalVaultPath(rawPath);
+    if (m_mediaMount.hasVault(path))
+        m_mediaMount.unmount();
     m_welcome->setVaultUnlocked(path, false);
 
     if (auto *view = m_vaultViews.take(path)) {
@@ -403,11 +459,17 @@ void MainWindow::updateWorkspaceActions()
     const bool hasVault = currentVaultView() != nullptr;
     const QList<QAction *> actions = {
         m_lockVaultAction, m_vaultInfoAction, m_topSecretAction, m_addEntryAction,
-        m_addNoteAction, m_editEntryAction, m_deleteEntryAction,
-        m_copyUsernameAction, m_detailsAction, m_iconsAction,
+        m_addNoteAction, m_importPhotoAction, m_importVideoAction,
+        m_editEntryAction, m_deleteEntryAction, m_copyUsernameAction,
+        m_detailsAction, m_iconsAction,
     };
     for (QAction *action : actions)
         action->setEnabled(hasVault);
+
+    m_mountMediaAction->setEnabled(
+        hasVault && MediaMountManager::isAvailable()
+        && !m_mediaMount.isMounted());
+    m_unmountMediaAction->setEnabled(m_mediaMount.isMounted());
 
     m_searchEdit->setEnabled(hasVault);
     if (!hasVault)

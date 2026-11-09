@@ -5,8 +5,16 @@ qt_add_library(cryptowl_ui STATIC
     DeviceSecretStore.cpp
     EncryptedContentWidget.h
     EncryptedContentWidget.cpp
+    EncryptedMediaDevice.h
+    EncryptedMediaDevice.cpp
+    PhotoViewDialog.h
+    PhotoViewDialog.cpp
+    VideoViewDialog.h
+    VideoViewDialog.cpp
     MainWindow.h
     MainWindow.cpp
+    MediaMountManager.h
+    MediaMountManager.cpp
     NoteEditorDialog.h
     NoteEditorDialog.cpp
     PasswordEditorDialog.h
@@ -34,12 +42,38 @@ qt_add_library(cryptowl_ui STATIC
     VaultUnlocker.cpp
     VaultView.h
     VaultView.cpp
+    vfs/FuseMount.cpp
     WelcomePage.h
     WelcomePage.cpp
 )
 
 target_include_directories(cryptowl_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(cryptowl_ui PUBLIC Qt6::Widgets cryptowl_core PRIVATE qt6keychain)
+target_link_libraries(cryptowl_ui PUBLIC
+    Qt6::Widgets
+    Qt6::Multimedia
+    Qt6::MultimediaWidgets
+    cryptowl_core
+    PRIVATE qt6keychain
+)
+
+if(CRYPTOWL_ENABLE_FUSE)
+    find_path(CRYPTOWL_FUSE_INCLUDE_DIR
+        NAMES fuse3/fuse.h
+        PATHS /usr/local/include /opt/homebrew/include /usr/include
+    )
+    find_library(CRYPTOWL_FUSE_LIBRARY
+        NAMES fuse3
+        PATHS /usr/local/lib /opt/homebrew/lib /usr/lib
+    )
+    if(CRYPTOWL_FUSE_INCLUDE_DIR AND CRYPTOWL_FUSE_LIBRARY)
+        message(STATUS "FUSE3 media drive backend enabled: ${CRYPTOWL_FUSE_LIBRARY}")
+        target_include_directories(cryptowl_ui PRIVATE ${CRYPTOWL_FUSE_INCLUDE_DIR})
+        target_compile_definitions(cryptowl_ui PRIVATE CRYPTOWL_HAS_FUSE=1)
+        target_link_libraries(cryptowl_ui PRIVATE ${CRYPTOWL_FUSE_LIBRARY})
+    else()
+        message(STATUS "FUSE3 not found; native media drive will be unavailable")
+    endif()
+endif()
 
 qt_add_executable(cryptowl
     main.cpp
