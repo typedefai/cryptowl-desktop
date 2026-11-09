@@ -94,10 +94,13 @@ logged.
   re-sign, TS-KEK derivation, TopSecretKEK wrap/unwrap
   (`t_wrapped_key` role=top_secret_kek wrapper=ts_kek), T DEKs and per-access
   prompts; secondary-password rotation and T history restore pending
-- ◐ History: fingerprint (`HMAC(HFK, title \0 classification \0 payload)`),
-  create/update version rows, and unchanged-save suppression; retention
-  (default 100), restore, and diff UI pending
-- Text diff (Myers over lines) for `plain` payloads
+- ✅ History: fingerprint (`HMAC(HFK, title \0 classification \0 payload)`),
+  create/update version rows, unchanged-save suppression, version listing,
+  per-version payload decryption, and restore-as-new-version. Security-level
+  snapshots are retained; restore authorizes both the current and target
+  tiers. Retention policy and optional commit messages remain pending.
+- ✅ Line diff for `plain` payloads and pretty-JSON diff for `password`
+  payloads; tier/title changes are shown in the diff header.
 - Exit: repository + history + tier tests green headless
 
 ### P4 — UI ◐
@@ -147,7 +150,10 @@ logged.
 - ✅ Top Secret setup action: re-enter the master password, set a secondary
   password, add `secondarySalt`, re-sign `vault.meta`, and wrap a random
   TopSecretKEK; no recovery and no biometric factor on desktop
-- History panel: version list, messages, text diff, restore
+- ✅ History dialog: version list with timestamps and tier badges, diff
+  against current, and restore. Restore asks for the tier-specific
+  authorization when the snapshot or current item is S/T, then records a new
+  version instead of rewriting history.
 - Exit: manual walkthrough of goals 1–5
 
 ### P4b — Media and native media drive ◐

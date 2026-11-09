@@ -3,12 +3,18 @@ qt_add_library(cryptowl_ui STATIC
     CreateVaultDialog.cpp
     DeviceSecretStore.h
     DeviceSecretStore.cpp
+    DiffDialog.h
+    DiffDialog.cpp
     EncryptedContentWidget.h
     EncryptedContentWidget.cpp
     EncryptedMediaDevice.h
     EncryptedMediaDevice.cpp
+    HistoryDialog.h
+    HistoryDialog.cpp
     PhotoViewDialog.h
     PhotoViewDialog.cpp
+    TextDiff.h
+    TextDiff.cpp
     VideoViewDialog.h
     VideoViewDialog.cpp
     MainWindow.h

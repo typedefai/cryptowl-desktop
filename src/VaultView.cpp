@@ -1,5 +1,6 @@
 #include "VaultView.h"
 
+#include "HistoryDialog.h"
 #include "NoteEditorDialog.h"
 #include "PasswordEditorDialog.h"
 #include "PasswordViewDialog.h"
@@ -61,6 +62,8 @@ using cryptowl::vault::FileStorage;
 using cryptowl::vault::ImportFile;
 using cryptowl::vault::ItemRecord;
 using cryptowl::vault::ItemRepository;
+using cryptowl::vault::ItemVersionRecord;
+using cryptowl::vault::ItemVersionSummary;
 using cryptowl::vault::ItemSummary;
 using cryptowl::vault::ItemUpdate;
 using cryptowl::vault::NewItem;
@@ -804,12 +807,17 @@ void VaultView::showContextMenu(QAbstractItemView *view, const QPoint &pos)
     menu.addSeparator();
     QAction *viewAction = menu.addAction(tr("View…"));
     QAction *editAction = menu.addAction(tr("Edit…"));
+    const bool isTextItem = row
+        && (row->type == QLatin1String(kNoteType)
+            || row->type == QLatin1String(kPasswordType));
+    QAction *historyAction = menu.addAction(tr("History…"));
     QAction *copyUsernameAction = menu.addAction(tr("Copy user name"));
     menu.addSeparator();
     QAction *deleteAction = menu.addAction(tr("Delete"));
 
     viewAction->setEnabled(isPassword || isMedia);
     editAction->setEnabled(hasSelection && !isMedia);
+    historyAction->setEnabled(isTextItem);
     copyUsernameAction->setEnabled(isPassword);
     deleteAction->setEnabled(hasSelection);
 
@@ -826,6 +834,8 @@ void VaultView::showContextMenu(QAbstractItemView *view, const QPoint &pos)
         viewSelectedEntry();
     else if (chosen == editAction)
         editSelectedEntry();
+    else if (chosen == historyAction)
+        showHistory();
     else if (chosen == copyUsernameAction)
         copySelectedUsername();
     else if (chosen == deleteAction)
@@ -1330,6 +1340,196 @@ void VaultView::viewSelectedVideo()
     VideoViewDialog dialog(row->title,
                            QString::fromStdString(files.front().name),
                            std::move(reader), this);
+    dialog.exec();
+}
+
+void VaultView::showHistory()
+{
+    if (!m_session)
+        return;
+
+    const QString id = selectedId();
+    const ItemRow *row = id.isEmpty() ? nullptr : rowForId(id);
+    if (!row
+        || (row->type != QLatin1String(kNoteType)
+            && row->type != QLatin1String(kPasswordType))) {
+        return;
+    }
+
+    std::vector<ItemVersionSummary> versions;
+    std::string error;
+    if (!m_session->items().versions(id.toStdString(), &versions, &error)) {
+        QMessageBox::critical(this, tr("Could not load history"),
+                              QString::fromStdString(error));
+        return;
+    }
+    if (versions.empty()) {
+        QMessageBox::information(this, tr("History"),
+                                 tr("This item has no saved versions."));
+        return;
+    }
+
+    const QString itemTitle = row->title;
+    const QString currentTier = row->classification;
+    const bool jsonPayload = row->type == QLatin1String(kPasswordType);
+    const std::string itemId = id.toStdString();
+    auto versionTiers = versions;
+
+    HistoryDialog::VersionLoader versionLoader =
+        [this, itemId, versionTiers](int seq, QString *payload,
+                                     QString *error) {
+            const ItemVersionSummary *summary = nullptr;
+            for (const auto &version : versionTiers) {
+                if (version.seq == seq) {
+                    summary = &version;
+                    break;
+                }
+            }
+            if (!summary) {
+                if (error)
+                    *error = tr("The selected version was not found.");
+                return false;
+            }
+
+            ItemVersionRecord record;
+            std::string recordError;
+            if (summary->classification == "C") {
+                if (!m_session->items().version(itemId, seq, &record,
+                                                &recordError)) {
+                    if (error)
+                        *error = QString::fromStdString(recordError);
+                    return false;
+                }
+            } else if (summary->classification == "S") {
+                const bool ok = withSecretItems(
+                    [&itemId, seq, &record, &recordError](
+                        ItemRepository &repository, std::string *innerError) {
+                        return repository.version(itemId, seq, &record,
+                                                  innerError);
+                    },
+                    &recordError);
+                if (!ok) {
+                    if (error)
+                        *error = QString::fromStdString(recordError);
+                    return false;
+                }
+            } else {
+                cryptowl::crypto::ProtectedValue topSecret;
+                if (!authorizeTopSecret(&topSecret, error))
+                    return false;
+                if (!m_session->items().version(itemId, seq, topSecret.span(),
+                                                &record, &recordError)) {
+                    topSecret.clear();
+                    if (error)
+                        *error = QString::fromStdString(recordError);
+                    return false;
+                }
+                topSecret.clear();
+            }
+
+            *payload = QString::fromStdString(record.payload);
+            wipe(record.payload);
+            return true;
+        };
+
+    HistoryDialog::CurrentLoader currentLoader =
+        [this, itemId, currentTier](QString *payload, QString *error) {
+            ItemRecord record;
+            std::string recordError;
+            if (currentTier == "C") {
+                if (!m_session->items().get(itemId, &record, &recordError)) {
+                    if (error)
+                        *error = QString::fromStdString(recordError);
+                    return false;
+                }
+            } else if (currentTier == "S") {
+                const bool ok = withSecretItems(
+                    [&itemId, &record, &recordError](
+                        ItemRepository &repository, std::string *innerError) {
+                        return repository.get(itemId, &record, innerError);
+                    },
+                    &recordError);
+                if (!ok) {
+                    if (error)
+                        *error = QString::fromStdString(recordError);
+                    return false;
+                }
+            } else {
+                cryptowl::crypto::ProtectedValue topSecret;
+                if (!authorizeTopSecret(&topSecret, error))
+                    return false;
+                if (!m_session->items().get(itemId, topSecret.span(), &record,
+                                            &recordError)) {
+                    topSecret.clear();
+                    if (error)
+                        *error = QString::fromStdString(recordError);
+                    return false;
+                }
+                topSecret.clear();
+            }
+
+            *payload = QString::fromStdString(record.payload);
+            wipe(record.payload);
+            return true;
+        };
+
+    HistoryDialog::RestoreAction restoreAction =
+        [this, itemId, itemTitle, currentTier, versionTiers](int seq,
+                                                            QString *error) {
+            const ItemVersionSummary *summary = nullptr;
+            for (const auto &version : versionTiers) {
+                if (version.seq == seq) {
+                    summary = &version;
+                    break;
+                }
+            }
+            if (!summary) {
+                if (error)
+                    *error = tr("The selected version was not found.");
+                return false;
+            }
+
+            const bool versionSecret = summary->classification == "S";
+            const bool touchTopSecret = currentTier == "T"
+                || summary->classification == "T";
+
+            std::unique_ptr<cryptowl::vault::VaultSession> secretSession;
+            cryptowl::crypto::ProtectedValue topSecret;
+            if (versionSecret && !m_session->hasKek()) {
+                QString secretError;
+                if (!openSecretSession(&secretSession, &secretError)) {
+                    if (error) {
+                        *error = secretError.isEmpty()
+                            ? tr("Secret access was canceled.")
+                            : secretError;
+                    }
+                    return false;
+                }
+            }
+            if (touchTopSecret && !authorizeTopSecret(&topSecret, error))
+                return false;
+
+            ItemRepository &repository =
+                secretSession ? secretSession->items() : m_session->items();
+            std::string restoreError;
+            const bool restored = repository.restoreVersion(
+                itemId, seq, topSecret.span(), &restoreError);
+            topSecret.clear();
+            secretSession.reset();
+            if (!restored) {
+                if (error)
+                    *error = QString::fromStdString(restoreError);
+                return false;
+            }
+
+            reload(QString::fromStdString(itemId));
+            emit statusMessage(tr("Restored version %1 of %2").arg(seq).arg(itemTitle));
+            return true;
+        };
+
+    HistoryDialog dialog(itemTitle, currentTier, std::move(versions),
+                         std::move(versionLoader), std::move(currentLoader),
+                         std::move(restoreAction), jsonPayload, this);
     dialog.exec();
 }
 

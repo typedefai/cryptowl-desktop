@@ -204,10 +204,20 @@ kept from the v1 core.
   SQLCipher, like `title`) — never put secrets in it. Unchanged saves write no
   version row, so a message alone records nothing.
 - Versions are **immutable**; restoring writes the old snapshot as a new
-  `seq` (audit trail stays linear), with the message defaulting to
-  `restored from seq N` (editable before saving).
-- Text types diff at the UI layer (`difflib`); binary types show
-  "unchanged/changed" (photos: thumbnail pairs, later).
+  `seq` (audit trail stays linear). The schema reserves a message for
+  `restored from seq N` and user edit summaries; message entry/display is not
+  implemented in the desktop history UI yet.
+- The history UI lists version number, time, tier, and title. Comparing a
+  version with the current item decrypts only those two payloads; S/T
+  snapshots require their tier-specific authorization.
+- **Tier changes are snapshots**: each version keeps its original
+  classification. Restoring a version restores that classification as well;
+  the UI shows the old → new tier and requires authorization for both the
+  current and target tiers when either is S/T. The restore itself is a new
+  version, never a rewrite.
+- Text types diff line-by-line at the UI layer; password JSON payloads are
+  pretty-printed first. Binary types show "unchanged/changed" (photos:
+  thumbnail pairs, later).
 - Retention: keep last `history_keep` versions per item (default **100**, from
   `config.json`); older rows purged right after append. Purged rows rely on
   `secure_delete = ON`. History follows the item's tier: S/T version payloads

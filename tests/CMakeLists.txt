@@ -20,6 +20,14 @@ target_link_libraries(tst_encryptedmediadevice PRIVATE cryptowl_ui Qt6::Test)
 
 add_test(NAME tst_encryptedmediadevice COMMAND tst_encryptedmediadevice)
 
+qt_add_executable(tst_textdiff
+    tst_textdiff.cpp
+)
+
+target_link_libraries(tst_textdiff PRIVATE cryptowl_ui Qt6::Test)
+
+add_test(NAME tst_textdiff COMMAND tst_textdiff)
+
 target_link_libraries(tst_mainwindow PRIVATE cryptowl_ui Qt6::Test)
 
 add_test(NAME tst_mainwindow COMMAND tst_mainwindow)

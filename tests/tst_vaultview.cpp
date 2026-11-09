@@ -40,6 +40,7 @@ using cryptowl::vault::ImportFile;
 using cryptowl::vault::ItemRecord;
 using cryptowl::vault::ItemRepository;
 using cryptowl::vault::ItemSummary;
+using cryptowl::vault::ItemUpdate;
 using cryptowl::vault::NewItem;
 using cryptowl::vault::VaultDatabase;
 using cryptowl::vault::VaultSession;
@@ -98,6 +99,7 @@ private slots:
     void topSecretRevealAndEditor();
     void secretAccessRequiresPasswordEachTime();
     void showsPhotoAndOpensViewer();
+    void showsHistoryAndDiff();
     void filtersPasswords();
     void switchesToIconView();
 };
@@ -1155,6 +1157,93 @@ void TestVaultView::showsPhotoAndOpensViewer()
     view.viewSelectedEntry();
     QVERIFY2(failure.isEmpty(), qPrintable(failure));
     QVERIFY(seen);
+}
+
+void TestVaultView::showsHistoryAndDiff()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString databasePath = dir.filePath(QStringLiteral("vault.db"));
+    QVERIFY(VaultDatabase::create(databasePath.toStdString(), kVaultKey));
+
+    std::string error;
+    auto session = openSession(databasePath, &error);
+    QVERIFY2(session != nullptr, error.c_str());
+
+    NewItem note = noteItem("History", "version one", "C");
+    std::string id;
+    QVERIFY2(session->items().create(note, &id, &error), error.c_str());
+    ItemUpdate update;
+    update.title = "History";
+    update.classification = "C";
+    update.meta = "{}";
+    update.payload = "version two";
+    QVERIFY2(session->items().update(id, update, &error), error.c_str());
+
+    VaultView view(QStringLiteral("/tmp/mock-vault"), session);
+    auto *details = view.findChild<QTreeWidget *>(QStringLiteral("vaultDetails"));
+    QVERIFY(details);
+    QTreeWidgetItem *row = nullptr;
+    for (int i = 0; i < details->topLevelItemCount(); ++i) {
+        if (details->topLevelItem(i)->text(0) == QStringLiteral("History"))
+            row = details->topLevelItem(i);
+    }
+    QVERIFY(row);
+    details->setCurrentItem(row);
+
+    bool historySeen = false;
+    bool diffSeen = false;
+    QString failure;
+    QTimer::singleShot(0, [&] {
+        auto *history = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+        if (!history) {
+            failure = QStringLiteral("history dialog not found");
+            return;
+        }
+        auto *versions =
+            history->findChild<QTreeWidget *>(QStringLiteral("historyVersions"));
+        auto *diffButton =
+            history->findChild<QPushButton *>(QStringLiteral("historyDiff"));
+        if (!versions || !diffButton) {
+            failure = QStringLiteral("history widgets missing");
+            history->reject();
+            return;
+        }
+        historySeen = true;
+        if (versions->topLevelItemCount() != 2) {
+            failure = QStringLiteral("history version count was wrong");
+            history->reject();
+            return;
+        }
+
+        QTimer::singleShot(0, [&] {
+            auto *diff = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            if (!diff) {
+                failure = QStringLiteral("diff dialog not found");
+                return;
+            }
+            auto *diffView =
+                diff->findChild<QTextBrowser *>(QStringLiteral("diffView"));
+            if (!diffView) {
+                failure = QStringLiteral("diff view missing");
+                diff->reject();
+                return;
+            }
+            diffSeen = true;
+            const QString text = diffView->toPlainText();
+            if (!text.contains(QStringLiteral("version one"))
+                || !text.contains(QStringLiteral("version two"))) {
+                failure = QStringLiteral("diff content was wrong");
+            }
+            diff->reject();
+        });
+        diffButton->click();
+        history->reject();
+    });
+    view.showHistory();
+    QVERIFY2(failure.isEmpty(), qPrintable(failure));
+    QVERIFY(historySeen);
+    QVERIFY(diffSeen);
 }
 
 void TestVaultView::filtersPasswords()

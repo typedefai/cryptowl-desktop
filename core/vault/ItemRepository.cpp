@@ -1008,4 +1008,161 @@ bool ItemRepository::softDelete(const std::string &id, std::string *error)
     return true;
 }
 
+bool ItemRepository::versions(const std::string &id,
+                              std::vector<ItemVersionSummary> *versions,
+                              std::string *error) const
+{
+    if (!versions) {
+        setError(error, "version list destination is null");
+        return false;
+    }
+    versions->clear();
+    if (!m_database.handle()) {
+        setError(error, "database is not open");
+        return false;
+    }
+
+    static constexpr const char *kSql =
+        "SELECT seq, classification, title, meta, message, fingerprint, created_at "
+        "FROM t_item_version WHERE item_id = ? ORDER BY seq DESC;";
+    Statement statement(m_database.handle(), kSql, error);
+    if (!statement.ok() || !bindText(statement.get(), 1, id, error))
+        return false;
+
+    while (true) {
+        const int rc = statement.step(error);
+        if (rc == SQLITE_DONE)
+            return true;
+        if (rc != SQLITE_ROW)
+            return false;
+
+        ItemVersionSummary version;
+        version.seq = sqlite3_column_int(statement.get(), 0);
+        version.classification = columnText(statement.get(), 1);
+        version.title = columnText(statement.get(), 2);
+        version.meta = columnText(statement.get(), 3);
+        version.message = columnText(statement.get(), 4);
+        version.fingerprint = columnText(statement.get(), 5);
+        version.createdAt = sqlite3_column_int64(statement.get(), 6);
+        versions->push_back(std::move(version));
+    }
+}
+
+bool ItemRepository::version(const std::string &id, int seq,
+                             ItemVersionRecord *version,
+                             std::string *error) const
+{
+    return this->version(id, seq, std::span<const std::uint8_t>(), version,
+                         error);
+}
+
+bool ItemRepository::version(const std::string &id, int seq,
+                             std::span<const std::uint8_t> topSecretKek,
+                             ItemVersionRecord *version,
+                             std::string *error) const
+{
+    if (!version) {
+        setError(error, "version destination is null");
+        return false;
+    }
+    if (!m_database.handle()) {
+        setError(error, "database is not open");
+        return false;
+    }
+
+    static constexpr const char *kSql =
+        "SELECT v.seq, v.classification, v.title, v.meta, v.message, "
+        "       v.fingerprint, v.created_at, v.content, v.encrypted_data_id, "
+        "       e.dek_id, e.content, e.nonce, e.auth_tag "
+        "FROM t_item_version v "
+        "LEFT JOIN t_encrypted_data e ON e.id = v.encrypted_data_id "
+        "WHERE v.item_id = ? AND v.seq = ?;";
+    Statement statement(m_database.handle(), kSql, error);
+    if (!statement.ok() || !bindText(statement.get(), 1, id, error)
+        || sqlite3_bind_int(statement.get(), 2, seq) != SQLITE_OK) {
+        return false;
+    }
+    const int rc = statement.step(error);
+    if (rc == SQLITE_DONE) {
+        setError(error, "version was not found");
+        return false;
+    }
+    if (rc != SQLITE_ROW)
+        return false;
+
+    ItemVersionRecord record;
+    record.seq = sqlite3_column_int(statement.get(), 0);
+    record.classification = columnText(statement.get(), 1);
+    record.title = columnText(statement.get(), 2);
+    record.meta = columnText(statement.get(), 3);
+    record.message = columnText(statement.get(), 4);
+    record.fingerprint = columnText(statement.get(), 5);
+    record.createdAt = sqlite3_column_int64(statement.get(), 6);
+
+    if (record.classification == "C") {
+        record.payload = columnText(statement.get(), 7);
+    } else if (record.classification == "S"
+               || record.classification == "T") {
+        const bool topSecret = record.classification == "T";
+        const std::string dataId = columnText(statement.get(), 8);
+        const std::string dekId = columnText(statement.get(), 9);
+        const Bytes content = columnBytes(statement.get(), 10);
+        const Bytes nonce = columnBytes(statement.get(), 11);
+        const Bytes tag = columnBytes(statement.get(), 12);
+        if (dataId.empty() || dekId.empty() || nonce.size() != 12
+            || tag.size() != 16) {
+            setError(error, "version encrypted data is invalid");
+            return false;
+        }
+        if (topSecret && topSecretKek.size() != 32) {
+            setError(error, "Top Secret version is locked");
+            return false;
+        }
+
+        const auto wrappingKey = topSecret ? topSecretKek : m_kek;
+        const char *wrapContext =
+            topSecret ? "dek.unwrap.top_secret_kek" : "dek.unwrap.kek";
+        ProtectedValue dek;
+        if (!loadDek(m_database.handle(), dekId, wrappingKey, wrapContext, &dek,
+                     error))
+            return false;
+        try {
+            Bytes plaintext = cryptowl::crypto::aesGcmDecrypt(
+                dek.span(), nonce, cryptowl::crypto::bytesOf(dataId), content,
+                tag, "version.payload.decrypt.dek");
+            record.payload.assign(
+                reinterpret_cast<const char *>(plaintext.data()),
+                plaintext.size());
+            std::fill(plaintext.begin(), plaintext.end(), std::uint8_t{0});
+        } catch (const std::exception &) {
+            setError(error, "could not decrypt version payload");
+            return false;
+        }
+    } else {
+        setError(error, "unsupported version classification");
+        return false;
+    }
+
+    *version = std::move(record);
+    return true;
+}
+
+bool ItemRepository::restoreVersion(
+    const std::string &id, int seq,
+    std::span<const std::uint8_t> topSecretKek, std::string *error)
+{
+    ItemVersionRecord version;
+    if (!this->version(id, seq, topSecretKek, &version, error))
+        return false;
+
+    ItemUpdate update;
+    update.title = version.title;
+    update.classification = version.classification;
+    update.meta = version.meta;
+    update.payload = version.payload;
+    const bool restored = this->update(id, update, topSecretKek, error);
+    std::fill(version.payload.begin(), version.payload.end(), '\0');
+    return restored;
+}
+
 } // namespace cryptowl::vault

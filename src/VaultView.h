@@ -46,6 +46,7 @@ public:
     void importVideo();
     void viewSelectedEntry();
     void editSelectedEntry();
+    void showHistory();
     void deleteSelectedEntry();
     void copySelectedUsername();
     void setupTopSecret();

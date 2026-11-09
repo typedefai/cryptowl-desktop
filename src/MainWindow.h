@@ -65,6 +65,7 @@ private:
     QAction *m_importPhotoAction = nullptr;
     QAction *m_importVideoAction = nullptr;
     QAction *m_editEntryAction = nullptr;
+    QAction *m_historyAction = nullptr;
     QAction *m_deleteEntryAction = nullptr;
     QAction *m_copyUsernameAction = nullptr;
     QAction *m_detailsAction = nullptr;

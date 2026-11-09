@@ -18,6 +18,8 @@ using cryptowl::crypto::Bytes;
 using cryptowl::crypto::ProtectedValue;
 using cryptowl::vault::ItemRecord;
 using cryptowl::vault::ItemRepository;
+using cryptowl::vault::ItemVersionRecord;
+using cryptowl::vault::ItemVersionSummary;
 using cryptowl::vault::ItemSummary;
 using cryptowl::vault::ItemUpdate;
 using cryptowl::vault::NewItem;
@@ -95,6 +97,7 @@ private slots:
     void crudRoundTrip();
     void noteTierRoundTrip();
     void topSecretRoundTrip();
+    void versionHistoryAndRestore();
     void sessionWithoutKekKeepsSecretItemsLocked();
     void preservesItemsAcrossSessions();
     void rejectsWrongSmk();
@@ -283,6 +286,77 @@ void TestItemRepository::topSecretRoundTrip()
     QVERIFY2(repository.get(id, &record, &error), error.c_str());
     QCOMPARE(QString::fromStdString(record.payload),
              QStringLiteral("top now secret"));
+}
+
+void TestItemRepository::versionHistoryAndRestore()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString databasePath = dir.filePath(QStringLiteral("vault.db"));
+    QVERIFY(VaultDatabase::create(databasePath.toStdString(), kVaultKey));
+
+    std::string error;
+    auto session = openSession(databasePath, kSmk, &error);
+    QVERIFY2(session != nullptr, error.c_str());
+    ItemRepository &repository = session->items();
+    const Bytes topSecretKek(32, 0x77);
+
+    NewItem initial = noteItem("History", "version one", "C");
+    std::string id;
+    QVERIFY2(repository.create(initial, &id, &error), error.c_str());
+
+    ItemUpdate update;
+    update.title = "History";
+    update.classification = "S";
+    update.meta = "{}";
+    update.payload = "version two";
+    QVERIFY2(repository.update(id, update, &error), error.c_str());
+
+    update.classification = "T";
+    update.payload = "version three";
+    QVERIFY2(repository.update(id, update, topSecretKek, &error), error.c_str());
+
+    std::vector<ItemVersionSummary> versions;
+    QVERIFY2(repository.versions(id, &versions, &error), error.c_str());
+    QCOMPARE(versions.size(), std::size_t(3));
+    QCOMPARE(versions[0].seq, 3);
+    QCOMPARE(versions[0].classification, std::string("T"));
+    QCOMPARE(versions[1].classification, std::string("S"));
+    QCOMPARE(versions[2].classification, std::string("C"));
+
+    ItemVersionRecord record;
+    QVERIFY2(repository.version(id, 1, &record, &error), error.c_str());
+    QCOMPARE(record.payload, std::string("version one"));
+    QCOMPARE(record.classification, std::string("C"));
+    QVERIFY2(repository.version(id, 2, &record, &error), error.c_str());
+    QCOMPARE(record.payload, std::string("version two"));
+    QCOMPARE(record.classification, std::string("S"));
+    QVERIFY2(repository.version(id, 3, topSecretKek, &record, &error),
+             error.c_str());
+    QCOMPARE(record.payload, std::string("version three"));
+    QCOMPARE(record.classification, std::string("T"));
+
+    // Restoring the C snapshot from a current T item requires the T key,
+    // and creates a new version rather than rewriting history.
+    QVERIFY2(repository.restoreVersion(id, 1, topSecretKek, &error),
+             error.c_str());
+    ItemRecord current;
+    QVERIFY2(repository.get(id, &current, &error), error.c_str());
+    QCOMPARE(current.classification, std::string("C"));
+    QCOMPARE(current.payload, std::string("version one"));
+
+    versions.clear();
+    QVERIFY2(repository.versions(id, &versions, &error), error.c_str());
+    QCOMPARE(versions.size(), std::size_t(4));
+    QCOMPARE(versions[0].seq, 4);
+    QCOMPARE(versions[0].classification, std::string("C"));
+
+    // Restoring the T snapshot from C requires the T key and raises the tier.
+    QVERIFY2(repository.restoreVersion(id, 3, topSecretKek, &error),
+             error.c_str());
+    QVERIFY2(repository.get(id, topSecretKek, &current, &error), error.c_str());
+    QCOMPARE(current.classification, std::string("T"));
+    QCOMPARE(current.payload, std::string("version three"));
 }
 
 void TestItemRepository::sessionWithoutKekKeepsSecretItemsLocked()

@@ -16,9 +16,9 @@ QtKeychain-backed device-secret migration, vault creation with a SQLCipher
 `vault.db`, S-tier password CRUD plus confidential/secret notes in a
 KeePass-style workspace, remembered Secret access by default (KEK only, with an
 option to require per-access master-password prompts), C-tier photo/video import
-and viewing, an optional read-only FUSE media drive on Linux/macOS, and a
-vault-info dialog, smoke tests) and the byte-exact **crypto core** (P1) of the
-vault format. `config.sig` verification, Windows WinFsp media mounting, and the
+and viewing, an optional read-only FUSE media drive on Linux/macOS, note/password
+version history with line/JSON diffs and restore, and a vault-info dialog,
+smoke tests) and the byte-exact **crypto core** (P1) of the vault format. `config.sig` verification, Windows WinFsp media mounting, and the
 remaining item types are next — see
 [docs/implementation-plan.md](docs/implementation-plan.md).
 

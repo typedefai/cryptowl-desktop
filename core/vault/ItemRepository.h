@@ -53,6 +53,22 @@ struct ItemUpdate
     std::string payload;
 };
 
+struct ItemVersionSummary
+{
+    int seq = 0;
+    std::string classification;
+    std::string title;
+    std::string meta;
+    std::string message;
+    std::string fingerprint;
+    std::int64_t createdAt = 0;
+};
+
+struct ItemVersionRecord : ItemVersionSummary
+{
+    std::string payload;
+};
+
 class ItemRepository
 {
 public:
@@ -75,6 +91,18 @@ public:
                 std::span<const std::uint8_t> topSecretKek,
                 std::string *error = nullptr);
     bool softDelete(const std::string &id, std::string *error = nullptr);
+
+    bool versions(const std::string &id,
+                  std::vector<ItemVersionSummary> *versions,
+                  std::string *error = nullptr) const;
+    bool version(const std::string &id, int seq, ItemVersionRecord *version,
+                 std::string *error = nullptr) const;
+    bool version(const std::string &id, int seq,
+                 std::span<const std::uint8_t> topSecretKek,
+                 ItemVersionRecord *version, std::string *error = nullptr) const;
+    bool restoreVersion(const std::string &id, int seq,
+                        std::span<const std::uint8_t> topSecretKek,
+                        std::string *error = nullptr);
 
 private:
     VaultDatabase &m_database;

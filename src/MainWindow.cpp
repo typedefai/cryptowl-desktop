@@ -144,6 +144,14 @@ void MainWindow::createActions()
             view->editSelectedEntry();
     });
 
+    m_historyAction = new QAction(
+        style()->standardIcon(QStyle::SP_FileDialogInfoView), tr("&History…"),
+        this);
+    connect(m_historyAction, &QAction::triggered, this, [this] {
+        if (auto *view = currentVaultView())
+            view->showHistory();
+    });
+
     m_deleteEntryAction = new QAction(
         style()->standardIcon(QStyle::SP_TrashIcon), tr("&Delete item"), this);
     connect(m_deleteEntryAction, &QAction::triggered, this, [this] {
@@ -225,6 +233,7 @@ void MainWindow::createMenus()
     editMenu->addAction(m_importPhotoAction);
     editMenu->addAction(m_importVideoAction);
     editMenu->addAction(m_editEntryAction);
+    editMenu->addAction(m_historyAction);
     editMenu->addAction(m_deleteEntryAction);
     editMenu->addSeparator();
     editMenu->addAction(m_copyUsernameAction);
@@ -254,6 +263,7 @@ void MainWindow::createToolBar()
     toolBar->addAction(m_importPhotoAction);
     toolBar->addAction(m_importVideoAction);
     toolBar->addAction(m_editEntryAction);
+    toolBar->addAction(m_historyAction);
     toolBar->addAction(m_deleteEntryAction);
     toolBar->addSeparator();
     toolBar->addAction(m_detailsAction);
@@ -468,8 +478,8 @@ void MainWindow::updateWorkspaceActions()
     const QList<QAction *> actions = {
         m_lockVaultAction, m_vaultInfoAction, m_topSecretAction, m_addEntryAction,
         m_addNoteAction, m_importPhotoAction, m_importVideoAction,
-        m_editEntryAction, m_deleteEntryAction, m_copyUsernameAction,
-        m_detailsAction, m_iconsAction,
+        m_editEntryAction, m_historyAction, m_deleteEntryAction,
+        m_copyUsernameAction, m_detailsAction, m_iconsAction,
     };
     for (QAction *action : actions)
         action->setEnabled(hasVault);
