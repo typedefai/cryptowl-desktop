@@ -108,19 +108,31 @@ void TestFuseMount::mountsAndReadsMedia()
     QVERIFY2(mount.mount(mountDir.path(), &fs, &mountError),
              qPrintable(mountError));
     QVERIFY(mount.isMounted());
-    QTest::qWait(500);
 
-    QDir root(mountDir.path());
-    const QStringList rootEntries =
-        root.entryList(QDir::AllEntries | QDir::NoDotAndDotDot);
-    const QStringList photoEntries =
-        QDir(mountDir.filePath(QStringLiteral("Photos")))
-            .entryList(QDir::AllEntries | QDir::NoDotAndDotDot);
+    QStringList rootEntries;
+    QStringList photoEntries;
+    for (int attempt = 0; attempt < 50; ++attempt) {
+        rootEntries = QDir(mountDir.path())
+                          .entryList(QDir::AllEntries | QDir::NoDotAndDotDot);
+        photoEntries =
+            QDir(mountDir.filePath(QStringLiteral("Photos")))
+                .entryList(QDir::AllEntries | QDir::NoDotAndDotDot);
+        if (!rootEntries.isEmpty() && !photoEntries.isEmpty())
+            break;
+        QTest::qWait(100);
+    }
 
     const QString mountedPath = mountDir.filePath(
         QString::fromStdString(entries.front().path.substr(1)));
     QFile mountedFile(mountedPath);
-    const bool opened = mountedFile.open(QIODevice::ReadOnly);
+    bool opened = false;
+    for (int attempt = 0; attempt < 50; ++attempt) {
+        if (mountedFile.open(QIODevice::ReadOnly)) {
+            opened = true;
+            break;
+        }
+        QTest::qWait(100);
+    }
     const QString openError = mountedFile.errorString();
     QByteArray mountedData;
     if (opened)

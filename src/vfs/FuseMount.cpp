@@ -8,6 +8,7 @@
 #include <cerrno>
 #include <cstring>
 #include <limits>
+#include <chrono>
 #include <memory>
 #include <string>
 #include <thread>
@@ -192,15 +193,21 @@ struct fuse_operations operations()
 bool forceUnmount(const QString &mountPoint, QString *error)
 {
     const QByteArray path = mountPoint.toUtf8();
+    int rc = -1;
+    int lastErrno = 0;
+    for (int attempt = 0; attempt < 5; ++attempt) {
 #ifdef __APPLE__
-    const int rc = ::unmount(path.constData(), MNT_FORCE);
+        rc = ::unmount(path.constData(), MNT_FORCE);
 #else
-    const int rc = ::umount2(path.constData(), MNT_DETACH);
+        rc = ::umount2(path.constData(), MNT_DETACH);
 #endif
-    if (rc == 0)
-        return true;
+        if (rc == 0)
+            return true;
+        lastErrno = errno;
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
     if (error)
-        *error = QString::fromLocal8Bit(std::strerror(errno));
+        *error = QString::fromLocal8Bit(std::strerror(lastErrno));
     return false;
 }
 
